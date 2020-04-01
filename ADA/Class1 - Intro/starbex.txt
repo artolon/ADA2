@@ -1,0 +1,7 @@
+drink,calories
+iced coffee,0
+iced vanilla latte,130.5
+cinnamon frappuccino,350
+chai latte,220
+mocha,290
+cappucino,120

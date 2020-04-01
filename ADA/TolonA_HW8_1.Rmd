@@ -1,0 +1,523 @@
+---
+title: "TolonA_HW8"
+author: "Abbie Tolon"
+date: "March 22, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#HW8 part I
+
+**Instructions.** We will use a SEER cervical cancer dataset (SEERcerv2004to2015.csv in the SEER Box folder) that includes cervical cancer cases diagnosed from 2004 to 2015 who were in the SEER 18 database for this homework assignment. The code for loading the dataset is provided below along with data management code for the variables that will be used to solve the problems. You can submit this homework along with parts II and III to the homework 8 folder on box on the due date listed on the syllabus.
+
+###Import the data and library packages
+
+```{r echo=TRUE, results='hide'}
+#install.packages("survminer")#for pairwise diffs
+#install.packages("ggfortify")
+#install.packages("haven")
+library(readr) #for read txt file
+library(survival) #for calculating KM values
+library(survminer)#for pairwise diffs
+library(ggfortify) #for KM curves
+library(readxl) # for reading in excel file
+library(ggplot2) # for plotting KM curve
+library(tidyverse) # for various packages
+library(haven) #for read_csv
+#load data for this exercise
+cerv<- read_csv("SEERcerv2004to2015.csv") #load data for this exercise
+str(cerv)
+```
+
+###Data management for variables used in this problem set (stage_f, event_f, and insurance_f)
+
+```{r echo=TRUE, results='hide'}
+#provide shorter names for variables
+names(cerv)<-c("ID", "age_category","yr_dx", "sex", "race",
+               "insurance", "marital", "%pov", "%edu", "cause_spec_death", 
+               "first_primary", "surv_mo", "vital_stat", "Stage") 
+
+##Recode stage variable as a factor variable and label it
+table(cerv$Stage)
+cerv$stage_f[
+    cerv$Stage=="IA"|
+    cerv$Stage=="IA1"|
+    cerv$Stage=="IA2"|
+    cerv$Stage=="IB"|
+    cerv$Stage=="IB1"|
+    cerv$Stage=="IB2"|
+    cerv$Stage=="INOS"]<-0
+
+cerv$stage_f[
+    cerv$Stage=="IIA"|
+    cerv$Stage=="IIB"|
+    cerv$Stage=="IINOS"]<-1
+
+cerv$stage_f[
+    cerv$Stage=="IIIA"|
+    cerv$Stage=="IIIB"|
+    cerv$Stage=="IIINOS"]<-2
+
+cerv$stage_f[
+    cerv$Stage=="IVA"|
+    cerv$Stage=="IVB"|
+    cerv$Stage=="IVNOS"]<-3
+    
+
+cerv$stage_f<-factor(cerv$stage_f,
+      levels = c(0,1,2,3),
+      labels = c("Stage 1", "Stage 2", "Stage 3", "Stage 4"))
+
+#Recode cause specific death as 1/0 if the person died/did not die of breast cancer 
+cerv$event_f[
+    cerv$cause_spec_death=="Dead (attributable to this cancer dx)"]<-1
+cerv$event_f[
+    cerv$cause_spec_death=="Alive or dead of other cause"|
+    cerv$cause_spec_death=="N/A not first tumor"]<-0
+
+#Recode insurance status as a factor variable and label it
+cerv$insurance_f[
+  cerv$insurance=="Insured"]<-0
+cerv$insurance_f[
+  cerv$insurance=="Insured/No specifics"]<-1
+cerv$insurance_f[
+ cerv$insurance=="Any Medicaid"]<-2
+cerv$insurance_f[
+  cerv$insurance=="Uninsured"]<-3
+cerv$insurance_f<-factor(cerv$insurance_f,
+      levels = c(0,1,2,3),
+      labels = c("Insured", "Insured/No specifics", "Any Medicaid", "Uninsured"))
+```
+
+###Check variables for correct categorization
+
+```{r echo=TRUE}
+#check recoding
+table(cerv$Stage, cerv$stage_f)
+
+#check recoding
+table(cerv$cause_spec_death, cerv$event_f)
+table(cerv$insurance, cerv$insurance_f)
+
+#check class of surv_mo
+class(cerv$surv_mo)
+summary(cerv$surv_mo)
+```
+
+###Exclusions
+
+```{r echo=TRUE}
+#exclude diagnosis years before 2007 the latest year the insurance variable is available
+cerv<-cerv[which(cerv$yr_dx>2006),]
+
+#exclude those with missing survival months, stage unknown, and insurance unknown
+cerv <- cerv[!(is.na(cerv$surv_mo)),]
+cerv <- cerv[!(is.na(cerv$stage_f)),]
+cerv <- cerv[!(is.na(cerv$insurance_f)),]
+```
+
+##1. Plot survival time (surv_mo) by stage at diagnosis using a kernel density curve in those who had the event (i.e. keeping those with event_f=1). Describe any differences that you see.
+
+*Describe differences* 
+It appears that stage 4 patients have a much lower probability of survival in the early months, when compared to other stages. Unsurprisingly, stage 3 patients seem to have a slightly higher probability of survival than stage 4, stage 2 is a little higher than stage 3, and stage 1 has the highest survival probabilty (in the early months). As time goes on, fewer and fewer patients survive, regardless of stage at diagnosis.  
+
+```{r message=FALSE, warning=FALSE}
+#Recode the "surv_mo" variable to eliminate the unknowns 
+cerv$surv_mo[
+  cerv$surv_mo=="Unknown"]<-NA
+
+#See how many are NA
+sum(is.na(cerv$surv_mo)) #261 are NA
+
+#Exclude the NAs
+cerv <- cerv[!(is.na(cerv$surv_mo)),]
+
+#Change to numeric 
+cerv$surv_mo <- as.numeric(cerv$surv_mo)
+class(cerv$surv_mo) #is numeric 
+
+#Plot survival time by stage of diagnosis
+ggplot(cerv[which(cerv$event_f==1),], aes(surv_mo, color=factor(stage_f))) + 
+  geom_density(alpha=.3) 
+```
+
+##2. Plot survival time by insurance status at diagnosis using a kernel density curve in those who had the event (i.e. keeping those with event_f=1). Describe any differences that you see.
+
+Overall, there are not huge differences in survival time, based on insurance status. However, those who are "insured/no specifics" and those with "any Medicaid" ironically seem to have the shortest survival time. 
+
+```{r echo=TRUE}
+#Plot survival time by insurance status
+ggplot(cerv[which(cerv$event_f==1),], aes(surv_mo, color=factor(insurance_f))) + 
+  geom_density(alpha=.3)
+```
+
+##3. Get the KM values and plot KM curves for each stage group on one KM plot and for each insurance group on another KM plot. Describe what you see. Note: if you created a new dataset to exclude censored observations for 1 and 2, you need to go back to the dataset that includes censored individuals as these plots should contain those with and without the event (i.e. all subjects in the cerv dataset).
+
+*KM curves for each stage*
+This plot is concurrent with the kernal density plot for cancer stage. Those in stage 1 clearly have the highest proportion of survival, with over 80% surviving by month 150. There is a drop in survival for stage 2 and 3 patients, with approximately 62% and 50% surviving by month 150, respectively. Stage 4 patients experience a very steep and immediate decline in survival. By month 150, there are only about 12% of patients surviving. 
+```{r echo=TRUE, results='hide'}
+#Get KM values for stage
+stage.surv <- survfit(Surv(surv_mo, event_f) ~ stage_f, cerv) 
+summary(stage.surv) 
+```
+
+```{r echo=TRUE}
+#Plot KM curve for stage
+autoplot(stage.surv) + labs(x="Survival months", y="Proportion Surviving", title="KM Survival Plots for Cervical Cancer by Stage of Cancer") 
+```
+
+*KM curves for insurance status*
+The KM curve for insurance status seems to paint a more accurate picture of survival than the KD plot. This shows that, overall, insured patients have a higher probability of survival, when compared to other groups. All other groups have fairly similar probabilities of survival overtime, but uninsured patients clearly have the lowest probability of survival. By month 20, fewer than 60% of uninsured patients survive. 
+```{r echo=TRUE, results='hide'}
+#Get KM values for insurance
+insur.surv <- survfit(Surv(surv_mo, event_f) ~ insurance_f, cerv) 
+summary(insur.surv) 
+```
+
+```{r echo=TRUE}
+#Plot KM curve for insurance
+autoplot(insur.surv) + labs(x="Survival months", y="Proportion Surviving", title="KM Survival Plots for Cervical Cancer by Insurance Status") 
+```
+
+##4. Determine the median survival time for each group (stage_f and insurance_f). Describe the differences. Note: if you cannot determine median survival for any of the groups, describe why and indicate the lower bound for median survival (e.g. > X months). You can get this from the table of KM values produced in #3.
+
+*Stage*
+
+**Stage 1:** Median cannot be determine; the last observation's survival time was 148 months
+
+**Stage 2:** Median cannot be determined; the last observation's survival time was 137 motnhs
+
+**Stage 3:** The median survival time is 126 months
+
+**Stage 4:** The median survival time is 13 months
+
+In general, it appears that those diagnosed at stage I have the longest survival time overall (t=148), with stage II patients shortly behind (t=137). Stage III patients experience a steeper drop in survival (t=126). There is then an extremely sharp decline in survival for stage IV patients at only 13 months. 
+```{r echo=TRUE}
+#Determine median survival time
+stage.surv
+```
+
+*Insurance*
+
+**Insured:** Median cannot be determined; the last observation's survival time was 108 months
+
+**Insured/No Specifics:** Median cannot be determined; the last observation's survival time was 114 months
+
+**Any Medicaid:** Median cannot be determined; the last observation's survival time was 109 months
+
+**Uninsured:** Median cannot be determined; the last observation's survival time was 99 months
+
+In general, it appears that those who are "Insured/No specifics" have the longest probability of survival (t=114). Shortly behind are patients who have any Medicaid (t=109) and patients who are insured (t=108). Finally, those who are uninsured appear to have a slightly shorter survival time (t=99). 
+```{r echo=TRUE}
+#Determine median survival time
+insur.surv
+```
+
+##5. Conduct a log-rank test to determine if there are any overall differences in cervical cancer survival by stage at diagnosis and insurance status. Conduct a post-hoc log rank test to determine which groups have differences. For post-hoc use the pairwise_survdiff function. Describe your findings.
+
+*Stage at diagnosis*
+According to the log-rank test, there is an overall statistically significant difference in cervical cancer survival, based on stage at diagnosis. The post-hoc test reveals that these differences are significant between each pairwise comparison.
+
+```{r echo=TRUE}
+#Calculate log rank test
+survdiff(Surv(surv_mo, event_f) ~ stage_f,data=cerv)
+
+#Post-hoc tests
+pairwise_survdiff(Surv(surv_mo, event_f) ~stage_f,data=cerv)
+```
+
+*Insurance status*
+According to the log-rank test, there is an overall statistically significant difference in cervical cancer survival, based on insurance status. The post-hoc test reveals that these differences are significant between "Insured" and "Insured/No specifics", "Insured" and "Any Medicaid", as well as "Insured and "Uninsured." All other pairings, however, were not statistically significantly different. 
+
+```{r echo=TRUE}
+#Calculate log rank test
+survdiff(Surv(surv_mo, event_f) ~ insurance_f,data=cerv)
+
+#Post-hoc tests
+pairwise_survdiff(Surv(surv_mo, event_f) ~insurance_f,data=cerv)
+```
+
+##Extra credit: plot KM curves by race and determine whether there are any differences in the survival curves by race using the log rank test. Interpret your results.
+
+```{r echo=TRUE, results='hide'}
+#Get KM values for race
+race.surv <- survfit(Surv(surv_mo, event_f) ~ race, cerv) 
+```
+
+The Kaplan Meier curve indicates that "Non-Hispanic Unknown Race" has the highest probability of survival (by far) when compared to other races. At month 150, the proportion surviving is above 95%. On the other hand, "Non-Hispanic Black" patients have the lowest proportion surviving, with less than 60% by month 150. 
+
+```{r echo=TRUE}
+#Plot KM curve for insurance
+autoplot(race.surv) + labs(x="Survival months", y="Proportion Surviving", title="KM Survival Plots for Cervical Cancer by Race") 
+```
+After visualizing the data through the KM curve, I computed a log-rank test. The results displayed that there was a significant different in surivival time, based on race. I then conducted a post-hoc test to determine which groups had the significant differences. The results indicated there was a significant difference between "Hispanic (all races)" and "Non-Hispanic Black", "Hispanic (all races)" and "Non-Hispanic Unknown Race", "Hispanic (all races)" and "Non-Hispanic White", "Non-Hispanic American Indian/Alaska Native" and "Non-Hispanic Unknown Race", "Non-Hispanic Asian or Pacific Islander" and "Non-Hispanic Black," "Non-Hispanic Asian or Pacific Islander" and "Non-Hispanic Unknown Race", "Non-Hispanic Black" and "Non-Hispanic Unknown Race", "Non-Hispanic Black" and "Non-Hispanic White", and between "Non-Hispanic Unknown Race" and "Non-Hispanic White." All other pairings were non-significant. 
+```{r echo=TRUE}
+#Calculate log rank test
+survdiff(Surv(surv_mo, event_f) ~ race,data=cerv) #there is a significant difference in survival among groups 
+
+#Post-hoc tests
+pairwise_survdiff(Surv(surv_mo, event_f) ~race,data=cerv)
+```
+##Extra extra credit: Why do you think you see what you see for Non-Hispanic Unknown Race? Why are the confidence intervals wider for certain groups than other groups?
+
+It is possible that the "Non-Hispanic Unknown Race" group is so much different from the others, due to the sample size. For example, out of 41,034 total observations, only 316 identify with this group. Second, people can be more than one race. Likewise, I think the confidence intervals are wider for groups with smaller sample sizes + more variability. For example, "Non-Hispanc Whites" comprise approximately half of the data points (n=21,912), so the estimate is more precise. This is why we can hardly even see the CI in the KM plot. Conversely, "Non-Hispanic American Indian/Alaska Native" patients comprise of less than 1% of the full sample. There is clearly more variablitity, making the estimate not as precise, which is why this CI is noticeably large. 
+
+```{r}
+#Further explore race variable 
+table(cerv$race)
+```
+
+#HW8 part II
+
+**Instructions.** We will use a SEER cervical cancer dataset (SEERcerv2004to2015.csv in the SEER Box folder) that includes cervical cancer cases diagnosed from 2004 to 2015 who were in the SEER 18 database for this homework assignment. The code for loading the dataset is provided below along with data management code for the variables that will be used to solve the problems. You can submit this homework along with parts I and III to the homework 8 folder on box on the due date listed on the syllabus.
+
+###Import the data and library packages
+```{r echo=TRUE, results='hide'}
+#install.packages("survminer")#for pairwise diffs
+library(readr) #for read txt file
+library(survival) #for calculating KM values
+library(survminer)#for pairwise diffs
+library(ggfortify) #for KM curves
+library(readxl) # for reading in excel file
+library(ggplot2) # for plotting KM curve
+library(tidyverse) # for various packages
+library(haven)
+library(lmtest) #model comparison
+cerv <- read_csv("SEERcerv2004to2015.csv") #load data for this homework
+```
+
+###Data management for variables used in this problem set (stage_f, event_f, and insurance_f)
+```{r echo=TRUE, results='hide'}
+#provide shorter names for variables
+names(cerv)<-c("ID", "age_category","yr_dx", "sex", "race",
+               "insurance", "marital", "%pov", "%edu", "cause_spec_death", 
+               "first_primary", "surv_mo", "vital_stat", "Stage") 
+
+##Recode stage variable as a factor variable and label it
+table(cerv$Stage)
+cerv$stage_f[
+    cerv$Stage=="IA"|
+    cerv$Stage=="IA1"|
+    cerv$Stage=="IA2"|
+    cerv$Stage=="IB"|
+    cerv$Stage=="IB1"|
+    cerv$Stage=="IB2"|
+    cerv$Stage=="INOS"]<-0
+
+cerv$stage_f[
+    cerv$Stage=="IIA"|
+    cerv$Stage=="IIB"|
+    cerv$Stage=="IINOS"]<-1
+
+cerv$stage_f[
+    cerv$Stage=="IIIA"|
+    cerv$Stage=="IIIB"|
+    cerv$Stage=="IIINOS"]<-2
+
+cerv$stage_f[
+    cerv$Stage=="IVA"|
+    cerv$Stage=="IVB"|
+    cerv$Stage=="IVNOS"]<-3
+    
+cerv$stage_f<-factor(cerv$stage_f,
+      levels = c(0,1,2,3),
+      labels = c("Stage 1", "Stage 2", "Stage 3", "Stage 4"))
+
+#Recode cause specific death as 1/0 if the person died/did not die of breast cancer 
+cerv$event_f[
+    cerv$cause_spec_death=="Dead (attributable to this cancer dx)"]<-1
+cerv$event_f[
+    cerv$cause_spec_death=="Alive or dead of other cause"|
+    cerv$cause_spec_death=="N/A not first tumor"]<-0
+
+#Recode insurance status as a factor variable and label it
+cerv$insurance_f[
+  cerv$insurance=="Insured"]<-0
+cerv$insurance_f[
+  cerv$insurance=="Insured/No specifics"]<-1
+cerv$insurance_f[
+ cerv$insurance=="Any Medicaid"]<-2
+cerv$insurance_f[
+  cerv$insurance=="Uninsured"]<-3
+cerv$insurance_f<-factor(cerv$insurance_f,
+      levels = c(0,1,2,3),
+      labels = c("Insured", "Insured/No specifics", "Any Medicaid", "Uninsured"))
+```
+
+###Check variables for correct categorization
+```{r echo=TRUE, results='hide'}
+#check recoding
+table(cerv$Stage, cerv$stage_f)
+#check recoding
+table(cerv$cause_spec_death, cerv$event_f)
+table(cerv$insurance, cerv$insurance_f)
+
+#check class of surv_mo
+class(cerv$surv_mo)
+summary(cerv$surv_mo)
+```
+
+###Exclusions
+```{r echo=TRUE, results='hide'}
+#exclude diagnosis years before 2007 the latest year the insurance variable is available
+cerv<-cerv[which(cerv$yr_dx>2006),]
+
+#exclude those with missing survival months, stage unknown, and insurance unknown
+cerv <- cerv[!(is.na(cerv$surv_mo)),]
+cerv <- cerv[!(is.na(cerv$stage_f)),]
+cerv <- cerv[!(is.na(cerv$insurance_f)),]
+```
+
+```{r message=FALSE, warning=FALSE}
+#Recode the "surv_mo" variable to eliminate the unknowns 
+cerv$surv_mo[
+  cerv$surv_mo=="Unknown"]<-NA
+
+#See how many are NA
+sum(is.na(cerv$surv_mo)) #261 are NA
+
+#Exclude the NAs
+cerv <- cerv[!(is.na(cerv$surv_mo)),]
+
+#Change to numeric 
+cerv$surv_mo <- as.numeric(cerv$surv_mo)
+class(cerv$surv_mo) #is numeric 
+```
+
+##Start Homework Part II:
+
+##1. Run a univariate Cox proportional hazards model to calculate HRs and 95% CIs for associations between: a) stage at diagnosis and death and b) insurance status at diagnosis and death. Interpret your results including confidence intervals.
+
+**Stage at Diagnosis**
+```{r echo=TRUE}
+#Univariate Cox proportional hazard model between stage at diagnosis and death
+stage.mod<-coxph(Surv(surv_mo, event_f)~stage_f, cerv, ties="efron")
+summary(stage.mod)
+```
+*Interpretation:* Patients diagnosed at Stage II had a 4.47 (95% CI 4.06-4.93) times higher hazard of death than those diagnosed at Stage I. Patients diagnosed at Stage III had a 8.31 (95% CI 7.66-9.03) times higher hazard of death than those diagnosed at Stage I. Patients diagnosed at Stage IV had a 26.70 (95% CI 24.63-28.94) times higher hazard of death than those diagnosed at Stage I. All results were statistically significant. 
+
+**Insurance Status**
+```{r echo=TRUE}
+#Univariate Cox proportional hazard model between insurance status and death
+insur.mod<-coxph(Surv(surv_mo, event_f)~insurance_f, cerv, ties="efron")
+summary(insur.mod)
+```
+*Interpretation:* Patients with "insurance/no specifics" had a 1.48 (95% CI 1.37-1.60) times higher hazard of death than those with insurance. Patients with "any medicaid" had a 1.58 (95% CI 1.50-1.67) times higher hazard of death than those with insurance. Uninsured patients had a 1.80 (95% CI 1.65-1.97) times higher hazard of death than those with insurance. All results were statistically significant. 
+
+*Run the code below before writing code for #2 to extract age as a number from the age_category variable. Note: In practice, we would not assume everyone who is 85+ is 85 as we are doing in this exercise. We might instead see if we could get another variable to measure age more accurately or create age categories.*
+
+```{r echo=TRUE}
+cerv <- cerv %>%
+   mutate(age = parse_number(age_category))
+```
+
+##2. Adjust each of your models for the potential confounder age at diagnosis (age). Interpret your results and include confidence intervals in your interpretation.
+
+**Stage at Diagnosis**
+```{r echo=TRUE}
+#Adjust the stage model for age at diagnosis as a potential confounder 
+stage.mod.ad<-coxph(Surv(surv_mo, event_f)~stage_f + age, cerv)
+summary(stage.mod.ad)
+```
+*Interpretation:* After adjusting the model for age...patients diagnosed at Stage II had a 4.05 (95% CI 3.67-4.47) times higher hazard of death than those diagnosed at Stage I. Patients diagnosed at Stage III had a 7.85 (95% CI 7.23-8.52) times higher hazard of death than those diagnosed at Stage I. Patients diagnosed at Stage IV had a 24.21 (95% CI 22.31-26.27) times higher hazard of death than those diagnosed at Stage I. All results were still statistically significant. 
+
+**Insurance Status**
+```{r echo=TRUE}
+#Adjust the insurance model for age at diagnosis as a potential confounder 
+insur.mod.ad<-coxph(Surv(surv_mo, event_f)~insurance_f + age, cerv)
+summary(insur.mod.ad)
+```
+*Interpretation:* After adjusting the model for age...patients with "insurance/no specifics" had a 1.26 (95% CI 1.16-1.36) times higher hazard of death than those with insurance. Patients with "any medicaid" had a 1.64 (95% CI 1.56-1.73) times higher hazard of death than those with insurance. Uninsured patients had a 1.94 (95% CI 1.77-2.12) times higher hazard of death than those with insurance. All results were statistically significant. 
+
+##3. Compare models (i.e. the two models for stage and the two models for insurance) using the liklihood ratio test.
+
+```{r echo=TRUE}
+#compare stage models (unadjusted vs. adjusted)
+lrtest(stage.mod, stage.mod.ad)
+     #The likelihood ratio test shows that the adjusted model is a significantly better fit than the unadjusted model
+
+#compare insurance models (unadjusted vs. adjusted)
+lrtest(insur.mod, insur.mod.ad)
+     #The likelihood ratio test shows that the adjusted model is a significantly better fit than the unadjusted model
+```
+
+##4. Plot the adjusted survival curves for stage at diagnosis and insurance status at diagnosis using the mean value of age. Describe what you see.
+
+**Stage at Diagnosis**
+```{r echo=TRUE}
+# Create the new data for plotting adjusted survival curves for each stage using age set at the mean
+j <- with(cerv, data.frame(stage_f = c("Stage 1", "Stage 2", "Stage 3", "Stage 4"), age=rep(mean(age, na.rm = TRUE),2)))
+j
+
+#Code to allow for plot below to work
+new<-survfit(stage.mod.ad, newdata = j)
+new$call$formula <- eval(new$call$formula)
+
+#Plot the adjusted survival curve for stage at diagnosis, using mean value of age
+ggsurvplot(new, data=cerv, conf.int = TRUE, legend.labs=c("Stage 1", "Stage 2", "Stage 3", "Stage 4"),  ggtheme = theme_minimal())
+```
+*Interpretation*
+The survival probability curve shows that those diagnosed at Stage I have the highest probability of survival. By month 150, the probability is about 85%. At stage 2, the probability of survival decreases to approximately 65% by month 150. For stage 3 patients, the probability is about 50%, and for those diagnosed at stage 4, the probability of survival is less than 12% by month 150. Basically, the later the stage at time of diagnosis, the lower the probability of survival as time passes. 
+
+**Insurance Status**
+```{r echo=TRUE}
+# Create the new data for plotting adjusted survival curves for each stage using age set at the mean
+k <- with(cerv, data.frame(insurance_f = c("Insured", "Insured/No specifics", "Any Medicaid", "Uninsured"), age=rep(mean(age, na.rm = TRUE),2)))
+k
+
+#Code to allow for plot below to work
+newb<-survfit(insur.mod.ad, newdata = k)
+newb$call$formula <- eval(newb$call$formula)
+
+#Plot the adjusted survival curve for stage at diagnosis, using mean value of age
+ggsurvplot(newb, data=cerv, conf.int = TRUE, legend.labs=c("Insured", "No Specifics", "Any Medicaid", "Uninsured"),  ggtheme = theme_minimal())
+```
+*Interpretation*
+The survival probability curve displays slight differences in survival, based on insurance status. Those with insurance seem to have the highest probability of survival, which is approximately 75% by month 120. Those with "insurance/no specifics" have a slightly lower probability. There is then a slight drop in survival among those with Medicaid and those who are uninsured, with approximately 62% and 60% probability of survival, respectively. 
+
+##5. a) Check for linearity of the age term in the stage and insurance models and b) check for influential observations in the age-adjusted stage and insurance models. Comment on the results. Note: You do not have to remove influential observations in your analysis.
+
+**Stage at Diagnosis**
+```{r echo=TRUE}
+#check for linearity of the age term
+a<- cerv$age * log(cerv$age)#create term to test linearity
+
+boxtida <- coxph(Surv(surv_mo, event_f)~stage_f + age + a, cerv) #run adjusted model with new term
+
+summary(boxtida) #View the results
+#The term is statistically significant, indicating that there is NONlinearity in the logit (age term); we fail this assumption
+```
+
+```{r echo=TRUE}
+#check for influential observations
+stage_influence<-coxph(Surv(surv_mo, event_f)~stage_f + age, cerv)
+summary(stage_influence)
+
+ggcoxdiagnostics(stage_influence, type = "dfbeta", sline=FALSE, ggtheme = theme_bw())
+
+#Age: The results show a cluster of observations below -4e-05 that are possibly influential. 
+#Stage: The stage variables show large leaps between clusters of observations. Stage 2 has clusters of influential observations above and below 0, while stage 3 only has a cluster of influential obs below -5e-04. 
+```
+
+**Insurance Status**
+```{r echo=TRUE}
+#check for linearity of the age term
+b<- cerv$age * log(cerv$age)#create term to test linearity
+
+boxtidb <- coxph(Surv(surv_mo, event_f)~insurance_f + age + b, cerv) #run adjusted model with new term
+
+summary(boxtidb) #View the results
+#In this model, the term is NOT statistically significant, indicating that there IS linearity in the logit (age term); we meet this assumption
+```
+
+```{r echo=TRUE}
+#check for influential observations
+insur_influence<-coxph(Surv(surv_mo, event_f)~insurance_f + age, cerv)
+summary(insur_influence)
+
+ggcoxdiagnostics(insur_influence, type = "dfbeta", sline=FALSE, ggtheme = theme_bw())
+#In this model, it appears there are no overly influential observations for age, nor for insurance="Any Medicaid"; however, there appears to be a large leap in betas for "insured/no specifics" and for "uninsured." 
+```

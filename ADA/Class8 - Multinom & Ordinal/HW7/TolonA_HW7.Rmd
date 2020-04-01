@@ -1,0 +1,225 @@
+---
+title: "TolonA_HW7"
+author: "Abbie Tolon"
+date: "March 11, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Get the data and load libraries
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#install packages
+#packages <- c("funModeling", "brant", "pacman")
+#install.packages(packages)
+
+#Load libraries
+library(readr) #for read txt file
+library(tidyverse) # for various packages
+library(nnet) #Multinomial logistic regresison
+library(MASS) #Ordinal logistic regression
+library(funModeling) #for describe function
+library(brant) #for testing parallel regression assumption
+
+#Most efficient way for loading the libraries! 
+pacman::p_load(readr, tidyverse, nnet, MASS, funModeling, brant)
+
+#read in the data
+Class8 <- read_delim("prostate_SEER.txt", "\t")
+```
+
+## Data Management
+
+```{r, echo=TRUE,  warning=FALSE}
+##Look at the data 
+names(Class8)<-c("PatientID", "Age", "FirstCancer", "Sex", "Diagnosis_year", "Insurance", "Marital_status", "Race_ethnicity", "Poverty", "Stage") 
+##Look at the variables that will be used
+##taking a quick look 
+describe(Class8)
+#Recode the character variables to numeric variables and recode the factor variables
+Data <- Class8 %>%
+   mutate(Age_num = parse_number(Age),
+         #Non-Hispanic White as reference
+         Race_cat = case_when(Race_ethnicity %in% c("Non-Hispanic Unknown Race", 
+                                                   "Non-Hispanic American Indian/Alaska Native", 
+                                                   "Non-Hispanic Asian or Pacific Islander") ~ "Non-Hispanic Other",
+                             TRUE ~ Race_ethnicity),
+         Race_cat = factor(Race_cat),
+         Race_cat = relevel(Race_cat, ref = "Non-Hispanic White"),
+         #Stage 
+         Stage_cat = replace(Stage, Stage == "UNK Stage", NA),
+         Stage_cat = factor(Stage_cat),
+         #Medicaid as reference
+         Insur_cat = case_when(Insurance %in% c("Insured",
+                                                "Insured/No specifics")  ~ "Private insurance",
+                               Insurance == "Any Medicaid" ~ "Medicaid"),
+         #"if the insurance matches (%in%) the values of "insured" etc., we will call it "private insurance"
+         Insur_cat = factor(Insur_cat),
+         Insur_cat = relevel(Insur_cat, ref = "Medicaid"),
+         #Marital status: Married as reference
+         Marital_cat = case_when(Marital_status %in% c("Divorced",
+                                                     "Separated",
+                                                     "Single (never married)",
+                                                     "Unmarried or Domestic Partner",
+                                                     "Widowed") ~ "Single",
+                               Marital_status == "Married (including common law)" ~ "Married"),
+         Marital_cat = factor(Marital_cat),
+         Marital_cat = relevel(Marital_cat, ref = "Married"),
+         #Poverty level: Low poverty as reference
+         Poverty = as.numeric(Poverty),
+         Poverty_cat = ifelse(Poverty < median(Poverty, na.rm = T), "Low poverty", "High poverty"),
+         Poverty_cat = factor(Poverty_cat),
+         Poverty_cat = relevel(Poverty_cat, ref = "Low poverty")) %>%
+  #Keep primary cancer cases only
+  filter(FirstCancer=="Yes")
+```
+
+## Drop the cases with missing values on any variables used for complete case analysis
+
+```{r, echo=TRUE,  warning=FALSE}
+Complete <- Data %>%
+  dplyr::select(Age_num : Poverty_cat) %>%
+  drop_na()
+
+MissingRate <-  1- (nrow(Complete)/nrow(Data))
+#Look at missing rate
+MissingRate #About 27% of the data are missing! 
+```
+
+##Begin Assisgnment
+
+Now that the data are cleaned, we can begin homework 8! 
+
+*Instructions*
+
+In this homework, we will continue to work on analyzing the association between marital status and stage at diagnosis with three covariates including Age, Race, and Insurance status using Complete dataset that we used in class. Please submit your homework by uploading the .RMD file to Box as instructed. Please also store the dataset that you download from Canvas in the same folder as the RMD file for this homework. That way you will not have to change the import code (and neither will we when we grade it).
+
+##1a. Re-level (using the relevel function) the dependent variable to stage II as the reference category for modeling.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#Attach the data to avoid repeatly typing the dataset name 
+attach(Complete)
+
+##Re-leveling data, choose stage II as reference
+Stage_cat_re <- relevel(Stage_cat, ref = "II")
+```
+
+##1b. Execute a mutlinomial regression model to examine the effect of marital status on stage at diagnosis. Include the covariates (Age_num, Race_cat, Insur_cat) in your model to adjust for the association between marital status and stage at diagnosis.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+##Execute a mutilnomial regression with marital status as independent variable and age, race, and insurance as covariates
+mod_1 <- multinom(Stage_cat_re ~ Marital_cat + Age_num + Race_cat + Insur_cat)
+summary(mod_1)
+```
+
+##2. Perform hypothesis tests for marital status variable, explain what you find.
+
+*Interpretation* 
+
+**Null Hypothesis:** There is NO association between marital status and stage at cancer diagnosis when adjusting for age, race, and insurance status. 
+
+**Alternative Hypothesis:** There IS an association between marital status and stage at cancer diagnosis when adjusting for age, race, and insurance status. 
+
+**Stage I:** After running hypotheses tests, we fail to reject the null hypothesis; there is NOT a statistically significant association bewteen marital status and being diagnosed with cancer in stage 1, when compared to stage 2.
+
+**Stage III:** After running hypotheses tests, we reject the null hypothesis; there IS a statistically significant association bewteen marital status and being diagnosed with cancer in stage 3, when compared to stage 2.
+
+**Stage IV:** After running hypotheses tests, we reject the null hypothesis; there IS a statistically significant association bewteen marital status and being diagnosed with cancer in stage 4, when compared to stage 2.
+
+```{r echo=TRUE, warning=FALSE}
+#calculate z score
+z <- summary(mod_1)$coefficients/summary(mod_1)$standard.errors
+
+#2-tailed Z test
+p <- (1 - pnorm(abs(z), 0, 1))*2 
+p
+```
+
+##3a. Get odds ratios for associations between marital status and stage at diagnosis, interpret the results. Hint: you should have a total of 3 OR (a. OR for being diagnosed in Stage I vs. Stage II for those are single vs. those who are married, b. OR for being diagnosed in Stage III vs. Stage II for those who are single vs. those who are married, c. OR for being diagnosed in Stage IV vs. Stage II for those who are single vs. those who are married).
+
+*Interpretation*
+
+**Stage I:** The odds of being diagnosed with stage I prostate cancer relative to stage II is approximately 1% lesser for single cases versus those who are married. However, this result is not statistically significant. 
+
+**Stage III:** The odds of being diagnosed with stage III prostate cancer relative to stage II is approximately 13% lesser for single cases versus those who are married. This result is statistically significant.  
+
+**Stage IV:** The odds of being diagnosed with stage IV prostate cancer relative to stage II is approximately 1.5 times greater for single cases versus those who are married. This result is also statistically significant. 
+
+```{r echo=TRUE, warning=FALSE}
+#Get confidence intervals for the log odds using confint function
+ci <- confint(mod_1)
+ci
+
+##extract the coefficients from the model and exponentiate to get OR
+exp(coef(mod_1))
+```
+
+##3b. Get 95% confidence interval for the odds ratio above for associations between marital status and stage at diagnosis, interpret the results. Hint: address the consistency between the hypothesis test and confidence interval.
+
+*Interpretation*
+
+**Stage I:** The true odds ratio of being diagnosed with stage I cancer (relative to stage II) among single cases is likely between 0.82 and 1.20; this CI interval shows non-significance, which is concurrent with the hypothesis test. 
+
+**Stage III:** The true odds ratio of being diagnosed with stage III cancer (relative to stage II) among single cases is likely between 0.80 and 0.94; this CI interval shows significance, which is concurrent with the hypothesis test. 
+  
+
+**Stage IV:** The true odds ratio of being diagnosed with stage IV cancer (relative to stage II) among single cases is likely between 1.38 and 1.59; this CI interval shows significance, which is concurrent with the hypothesis test. 
+
+```{r echo=TRUE, warning=FALSE}
+#get confidence intervals for ORs
+exp(confint(mod_1, level=0.95))
+```
+
+##4. Execute an ordinal logistic regression with the marital status variable as the independent variable and the same covariates.
+
+```{r echo=TRUE, warning=FALSE}
+#Execute the ordinal logistic regression 
+mod_2 <- polr(Stage_cat ~ Marital_cat + Age_num + Race_cat + Insur_cat,Hess=TRUE)
+
+summary(mod_2) 
+```
+
+##5. Perform the hypothesis test for all non-reference levels of marital status variables, explain what you find for each level.
+
+*Findings*
+
+According to p-values at the 5% significance level, all variables and levels in the model were statistically significant. This means we reject the null hypotheses that β is equal to 0 for all levels
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+## store table
+ctable <- coef(summary(mod_2))
+
+## calculate and store p values
+p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+p
+
+## combined table
+ctable <- cbind(ctable, "p value" = p)
+ctable
+
+# default method gives profiled CIs
+ci <- confint(mod_2) #our cut off should be 0, since we haven't exponentiated yet
+ci
+```
+
+##6. Get odds ratios and 95% confidence interval for associations between marital status and stage at diagnosis. Interpret the results.
+
+*Interpretation*
+
+The odds of being diagnosed at *stage IV and III* are 1.22 times the odds of being diagnosed at *stages II and I* for patients who are single, compared to patients who are marreid. 
+
+```{r echo=TRUE, warning=FALSE}
+#Get ORs and 95% CIs
+exp(cbind("Odds ratio" = coef(mod_2), confint.default(mod_2, level = 0.95)))
+```
+
+##7. What conclusions can you draw from both models in terms of the association between marital status and stage among prostate cancer patients?
+
+For the multinomial logistic regression, we found that there was a statistically significant association between marital status and stage at cancer diagnosis when comparing stage III and stage IV to stage II, but NOT when comparing stage I to stage II. Specifically, when compared to being diagnosed in stage II, being single was "protective" for being diagnosed with stage III cancer. However, being single was NOT protective in stage IV. 
+
+For the ordinal logistic regression, it was found that single patients had greater odds of being diagnosed with cancer, relative to married patients. In general, the odds of being diagnosed at later stages (III and IV) were greater than the odds of being diagnosed at earlier stages (II and I). 
+
+In general, these two models show that patients who are single (relative to married patients) likely have greater odds of being diagnosed with stage III or stage IV cancer, relative to stage II

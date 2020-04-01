@@ -1,0 +1,210 @@
+---
+title: "HW4_Tolon"
+author: "Abbie Tolon"
+date: "February 5, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+##Load packages
+library(tidyverse) # for ggplot2,tibble,tidyr,readr,purrr,dplyr,stringr,forcats
+library(haven) # for reading Stata files
+library(labelled) # for working with variable labels
+library(magrittr) # for extra %$% pipe operator
+library(readxl) # for reading the excel file
+library(writexl) # for saving something as an Excel file
+library(sas7bdat) # for opening a SAS file
+library(dplyr) # gives rename function
+library(ggplot2)
+library(RColorBrewer) # to get color palettes
+library(ggpubr) # more plotting options! 
+
+```
+
+## Instructions
+Complete the below data visualization tasks in R Markdown and upload the Markdown file or a Notebook HTML file to box as instructed. Please save the file with your Last name first and your first name initial (e.g. JohnsonK_HW4). Don't forget to use annotations in your coding, which makes it easier for us to grade and may result in a better score for you if we do not have to determine what you were thinking/where the code went wrong when we find an error. This homework uses a 10% sample of the BRFSS 2017 data. This data along with the code that was used to generate the sample and conduct some initial data cleaning can be found on Github.
+
+Run the below provided code that will load libraries, read in data from Github, do some residual data cleaning
+
+```{r}
+BRFSS2017<-
+read.csv(
+  "https://raw.githubusercontent.com/kijohnson/ADA_Spring_2019/master/BRFSS2017_10percent_v.csv", 
+header=TRUE, sep=",", na.strings=FALSE)
+#BRFSS2017 <- BRFSS2017[rowSums(is.na(BRFSS2017))==0,]
+print(head(BRFSS2017))
+
+
+#recode sex
+BRFSS2017$sex<-factor(BRFSS2017$SEX, 
+                      levels = c(1, 2), 
+                      labels = c("Male", "Female"))
+  table(BRFSS2017$SEX)
+  
+  
+#drop X and SEX variables from dataset, which are duplicated
+myvars<-c("rowID", "age_cat", "state", "employed", "income", "seatbelt", 
+          "diabetes", "bmi", "wtkg", "ht_meters", "sex")
+BRFSS2017<-BRFSS2017[myvars]
+
+#check class for numeric variables
+class(BRFSS2017$ht_meters)
+class(BRFSS2017$wtkg)
+class(BRFSS2017$bmi)
+
+#they are factors, make them numeric
+BRFSS2017$ht_meters<-as.numeric(as.character(BRFSS2017$ht_meters))
+class(BRFSS2017$ht_meters)#check again
+
+BRFSS2017$wtkg<-as.numeric(as.character(BRFSS2017$wtkg))
+class(BRFSS2017$wtkg)#check again
+
+BRFSS2017$bmi<-as.numeric(as.character(BRFSS2017$bmi))
+class(BRFSS2017$bmi)#check again
+```
+
+##1. *Bar plot with calculated order.* Create a bar plot of counts of income column. Order the columns by descending order, so that the most counts (tallest bar) is on the left and angle the text on the X-axis so it is readable.
+
+```{r}
+#Check class of income variable
+class(BRFSS2017$income) #is factor
+
+#recode to character
+BRFSS2017$income <- as.character(BRFSS2017$income) 
+class(BRFSS2017$income) #is character 
+
+#Check unique values to see what each category will be
+z <- unique(BRFSS2017$income)
+z
+
+#Recode the variable names so that they are shorter and easier to read 
+BRFSS2017 <- BRFSS2017 %>%
+  mutate(Income=ifelse(income=="< $10,000", "<10k",
+                       ifelse(income=="$10,000 to less than $15,000", "$10k to <$15k",
+                       ifelse(income=="$15,000 to less than $20,000", "$15k to <$20k",
+                       ifelse(income=="$20,000 to less than $25,000", "$20k to <$25k",
+                       ifelse(income=="$25,000 to less than $35,000", "$25k to <$35k",
+                       ifelse(income=="$35,000 to less than $50,000", "$35k to <$50k",
+                       ifelse(income=="$50,000 to less than $75,000", "$50k to <$75k",
+                       ifelse(income=="$75,000 or more", "$75k or more",
+                       ifelse(income=="Don't know/Not sure", "Unsure",
+                       ifelse(income=="Refused","Refused", "NA"))))))))))) 
+
+#Confirm recoded successfully
+table(BRFSS2017$Income, BRFSS2017$income) #looks good
+
+#Change back to a factor variable
+BRFSS2017$Income <- as.factor(BRFSS2017$Income)
+class(BRFSS2017$Income) #is factor
+
+#Create initial bar chart
+ggplot(data=BRFSS2017, aes(x=Income)) +
+  geom_bar(aes(fill=Income)) 
+
+#Relevel, so that tallest count is on the left
+new_Income <- c("$75k or more","$50k to <$75k","$35k to <$50k",
+                "$25k to <$35k","$20k to <$25k","$15k to <$20k","$10k to <$15k","<10k","Refused","Unsure","NA") 
+
+#Change the "new_Income" variable to a factor, so that I can later remove unwanted levels 
+new_Income <- as.factor(new_Income)
+
+#Change "Income" to a factor variable, using the levels from "new_Income", but also dropping the levels of "Refused", "Unsure", and "NA", so that they do not show up in my bar chart
+BRFSS2017$Income <- factor(BRFSS2017$Income, levels = new_Income, droplevels(new_Income, c("Refused", "Unsure", "NA")))
+
+#recode "NA" to NA
+BRFSS2017$Income <- recode(BRFSS2017$Income,
+                           "NA" = NA_character_)
+
+#Create new bar chart with adjustments 
+ggplot(data=subset(BRFSS2017, !is.na(Income)), aes(x=Income)) +
+  geom_bar(aes(fill=Income)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1,
+                                   hjust = 1))
+view(BRFSS2017$Income, na=TRUE)
+
+```
+
+##2. *Scatter plot with age.* Create a scatter plot of height and weight, with age indicated for each point by some other aesthetic. Try using aesthetics such as color, fill, size, shape, and alpha (opacity) to emphasize features which may be interesting. Label your X and Y variables with units.
+
+```{r}
+#Creating a scatter plot, where height=x and weight=7; categorized by age, using colors
+ggplot(data=BRFSS2017, aes(x=ht_meters, y=wtkg)) +
+  geom_point(na.rm=TRUE, aes(color=age_cat)) +
+  labs(title = "Height and Weight, Indicated by Age", 
+       x="Height(meters)", y="Weight(kg)") +
+  theme(plot.title = element_text(hjust = .6))
+
+```
+
+##3. *Compare sexes.* Create a scatter plot of height and weight that illustrates the distibution of the two sexes. Label your X and Y variables with units. Helpful tips:
+- Use aesthetics of your choice
+- Draw two separate plots, one for each sex
+- Use facets to draw separate plots for each sex
+
+```{r}
+#Creating a scatter plot - this time where it is faceted by sex to compare male and female
+
+ggplot(data = subset(BRFSS2017, !is.na(sex)), aes(x=ht_meters, y=wtkg)) +
+  geom_point(aes(color=age_cat), na.rm=TRUE) +
+  labs(title = "Height and Weight, Indicated by Age", 
+       x="Height(meters)", y="Weight(kg)") +
+  theme(plot.title = element_text(hjust=.6)) +
+  facet_grid(~sex)
+```
+
+##4. *Bubble plots.* Create a bubble plot that displays counts of observations of income and employed status as the size of a geom_point. You can run the below code first to obtain counts of income and employed status. Answer the question, which category of income and employment has the most counts?
+
+```{r}
+#income.employed.count = count(BRFSS2017, c("employed", "income"))
+#head(income.employed.count)
+income.employed.count<-as.data.frame(table(BRFSS2017$employed, BRFSS2017$income))
+colnames(income.employed.count)<-c("employed", "income", "freq")
+
+#Create the bubble plot 
+ggplot(data=income.employed.count, aes(x=employed, y=income)) +
+  geom_point(alpha=.7, aes(size=freq), color="blue", na.rm = TRUE) +
+  labs(x="Category of Employment", y="Category of Income", 
+       title = "Frequency of Categories of Employment and Income") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1,
+                                   hjust = 1, face="bold"))
+
+#View new data frame to see all counts
+income.employed.count
+
+#Sort by frequency to see highest count
+view(sort(income.employed.count$freq, decreasing = TRUE)) #highest value is 7318
+
+#View which category this count belongs to
+highest <- income.employed.count[income.employed.count$freq==7318, ] 
+highest
+
+#The above code shows that "$75,000 or more" and "employed for wages" is the category of income and employment that has the most counts. 
+```
+
+##5. *Superimpose boxplots over violin plots.* a. Draw box plots (geom_boxplot) instead of violins for weight and diabetes b. Superimpose the boxplots over the top of the violin plots. Label your X and Y variables with units. Use the below code to create a new diabetes variable with short labels for plotting for this problem.
+
+```{r}
+#Using the code to create a new diabetes variable, so that our plots have shorter labels 
+BRFSS2017$diabetes_short <- factor(
+BRFSS2017$diabetes,
+  levels = c("Yes", "Yes, but female told only during pregnancy", "No", "No, pre-diabetes or borderline diabetes",
+             "Don't know/Not Sure", "Refused"),
+  labels = c("Yes","Yes, pregnancy","No","No, pre-diabetes","Unknown","Refused"))
+
+#a) Drawing a box plot
+ggplot(data = BRFSS2017, aes(x=diabetes_short, y=wtkg)) +
+  geom_boxplot() +
+  labs(x = "Diabetes Status", y = "Weight(kg)",
+       title = "Diabetes and Weight") 
+
+#b) Drawing boxplots that are on top of violin plots
+ggplot(data = BRFSS2017, aes(x=diabetes_short, y=wtkg)) +
+  geom_violin(na.rm = TRUE) +
+  geom_boxplot(na.rm = TRUE) +
+  labs(x = "Diabetes Status", y = "Weight(kg)",
+       title = "Diabetes and Weight") +
+  theme(plot.title = element_text(face="bold", hjust=0.5))
+```
+

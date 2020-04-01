@@ -1,0 +1,294 @@
+---
+title: "HW2_Tolon"
+author: "Abbie Tolon"
+date: "January 22, 2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE, include=FALSE, results='hide'}
+#install.packages("date") 
+#install.packages("pastecs") 
+#install.packages("haven") 
+#install.packages("knitr") 
+#install.packages("tidyverse")
+#install.packages("dplyr")
+#install.packages("magrittr")
+#install.packages("readr")
+#install.packages("rmarkdown")
+#install.packages("imager")
+#install.packages("ggplot2")
+
+library(date) #for handling dates
+library(pastecs) #for summary statistics
+library(haven) #for reading SPSS (read_sav()), stata (read_dta()), SAS(read_sas()) and xpt (read_xpt()) files
+library(knitr) #for creating nicer tables
+library(tidyverse) #for various pipes and additional functions
+library(dplyr)
+library(magrittr) #pipe operator
+library(readr)
+library(rmarkdown)
+library("imager")
+library("ggplot2")
+
+```
+
+The following analysis was generated using data from a class survey that was distributed for an Advanced Data Analysis course. Questions/instructions from the assignment are copied below. Explanations are also posted beneath each question.
+
+**1. Import class one survey data from our Github site (The dataset called 'Class 1 Survey Spring 2020.csv' is located in the class one folder), calling the R dataframe that you create C1survey**
+
+The data were stored and retrieved from the class Git Hub site. 
+
+```{r echo=FALSE, results='hide'}
+
+C1survey <-
+ read.csv("https://raw.githubusercontent.com/kijohnson/ADA_Spring_2020/master/Class%201/Class%201%20Survey%20Spring%202020.csv")
+
+```
+
+**2. Determine: a. the number of observations (i.e. the number of people who filled out the survey) and b. the number of variables in the dataframe.**
+
+Once uploaded, there were 48 observations and 27 columns.
+
+```{r echo=FALSE, results='hide'}
+
+dim(C1survey) #output shows there are 48 observations (rows) and 27 variables (columns) in the dataframe
+
+```
+
+**3. Generate and display a list of column names, calling your list varlist.**
+
+Next, variable names were assessed
+
+```{r echo=FALSE, results='hide'}
+
+varlist <- names(C1survey) #get names of variables and assign it to "varlist"
+
+#view "varlist" to display in window and confirm lthe ist of names was generated/assigned correctly 
+view(varlist)
+
+```
+
+**4. a. Rename the column variables to something shorter and that is descriptive of what the variable is about (for example like_dogs for the 'Do you like dogs?' question variable) and b. write code to display that they are renamed.**
+
+Finally, the variable names were edited to ensure they were easier to quickly understand. A list of names was also generated. 
+
+```{r echo=FALSE, results='hide'}
+
+names(C1survey)<-c("ID","Like Cats","Like Dogs","Desert Island","Life Slogan","Day of Week","Lark Owl Hum","Fav Food","Fav Drink","Fav Season","Fav Month","Hobby","Program","Specialization","Stat Soft","R Exp","Coding Comf","Length Coding","Learn","Interest","Fave#","BDay","BMonth","Country","State","City","Education") #Make the variable names more concise and easy to understand 
+
+varlist2 <- names(C1survey) #we are assigning this list to a new variable name
+
+view(varlist2) #view "varlist2" to ensure the code was run properly 
+
+```
+
+**5. Write code to determine and display the number of factor, integer, numerical, and character variables there are in the C1survey dataset.**
+
+For question #5, we are wanting to understand how many variables are in each class type within our dataset. Therefore, we can use the "lapply" function to generate a list of variable types, within the class survey. I am assigning this list as "factors2." After viewing the list, we can generate code to count the number of data points within each class. The output shows us that there are 4 numeric variables, 4 integer variables (which are all also numeric), 23 factor variables, and 0 character variables. 
+
+```{r, echo=FALSE}
+
+#First, scan full list for quick overview
+factors2 <- lapply(C1survey, class)
+view(factors2)
+```
+
+Numeric variables
+```{r, echo=FALSE}
+C1survey %>% select_if(is.numeric) %>%
+ncol() #count number of numberic ----- answer: 4
+```
+
+Integer variables
+```{r, echo=FALSE}
+C1survey %>% select_if(is.integer) %>%
+ncol() #Count number of integer (got same count as numeric) -----answer: 4
+```
+
+Factor variables
+```{r, echo=FALSE}
+C1survey %>% select_if(is.factor) %>%
+ncol() #count number of factor ----- answer: 23
+```
+
+Character variables
+```{r, echo=FALSE}
+C1survey %>% select_if(is.character) %>%
+ncol() #count number of character ----- answer: 0
+```
+
+**6. a. Using code, check the bday and bmonth variables for any unusual or missing values. If you find any, b. describe what you will do with the unusual values in a comment before or immediately following the code that does it, and c. after you have cleaned up any unusual values, find the median bday and month.**
+
+Next, the variables for birthday and birth month had to be cleaned. After viewing the data, I realized that there was not a consistency in how people entered their birth day and their birth month. Because the variable was classified as a "factor" variable, I had to first recode it to a "character" variable. This allowed me to create a new character variable, where I could make the data uniform. For example, if someone put " report 19" as their birthday, I recoded it to 19. After doing this for both the birth day and the birth month, I changed the newly cleaned variables to numeric. This allowed me to check the median for both. 
+
+Summary of "BDay" variable 
+```{r, echo=FALSE}
+
+C1survey%$%
+  summary(BDay) #check values for BDay variable
+```
+
+Summary of "BMonth" variable
+```{r, echo=FALSE}
+
+C1survey%$%
+  summary(BMonth) #check values for BMonth variable 
+
+#I will change any text values to numbers (e.g. twenty-eight=28)
+#First, I will change the class from "factor" to "character," so that I can recode the text values
+
+#recoding birthday variable first
+C1survey$BDay <- as.character(C1survey$BDay) 
+```
+
+Birth day variable
+```{r, echo=FALSE}
+
+#Check Birthday class to confirm the change
+class(C1survey$BDay)
+
+#Next, rcode Birth month variable
+C1survey$BMonth <- as.character(C1survey$BMonth)
+```
+
+Birth month variable
+```{r, echo=FALSE}
+
+#Check Birth month class to confirm the change
+class(C1survey$BMonth)
+```
+
+```{r, echo=FALSE}
+
+#Recode Birthday, so that all values have numbers, and no words or abbreviations
+C1survey2 <- C1survey %>%
+  mutate(BDay2=ifelse(BDay==" report 19", 19, ifelse(BDay=="7-Jun", 7, BDay))) 
+```
+
+Cleaned birthday (top) and cleaned birth month (bottom)
+```{r, echo=FALSE}
+
+#Recode Birth month, so that all values have numbers, and no words or abbreviations
+C1survey3 <- C1survey2 %>%
+  mutate(BMonth2=ifelse(BMonth=="April", 4, ifelse(BMonth=="June 7-91", 6, ifelse(BMonth=="June", 6, ifelse(BMonth=="report 12", 12, BMonth)))))
+
+#Now, change both variables to numeric, so that I can find the median of each
+C1survey3$BDay2 <- as.numeric(C1survey3$BDay2)
+format(C1survey3$BDay2, digits = 2)
+
+C1survey3$BMonth2 <- as.numeric(C1survey3$BMonth2)
+format(C1survey3$BMonth2, digits = 2)
+```
+
+Class of both variables (BDay and BMonth) is numeric
+```{r, echo=FALSE}
+
+#Check class again to confirm change
+class(C1survey3$BDay2)
+class(C1survey3$BMonth2)
+
+```
+
+Median birthday
+```{r, echo=FALSE}
+
+#Median bday
+median(C1survey3$BDay2, na.rm=TRUE) #median = 16
+```
+
+Median birth month
+```{r, echo=FALSE}
+
+#Median bmonth
+median(C1survey3$BMonth2, na.rm=TRUE) #median = 6
+```
+
+**7. a. Create a new variable called bseason that gives the season according to Northern Meteorological season in which respondents were born (winter=12/1 to 2/29, spring=3/1 to 5/31, summer=6/1 to 8/31, fall=9/1 to 11/30).**
+
+To create the season variable, I had to first create a variable called "birthday." I did this by combining the "BDay" variable with the "BMonth" variable. After combining those two variables, I convereted "birthday" to be a "date" variable. After creating this new birthday variable (in date form), I was then able to create the "bseason" variable. I used code to group birthdays by season, according to the Northern meteorological seasons. 
+
+```{r, echo=FALSE, results='hide'}
+
+#First, I will combine "BDay" and "BMonth" into one column called "Birthday"
+C1survey3$Birthday <- paste0(C1survey3$BMonth2, "/", C1survey3$BDay2)
+class(C1survey3$Birthday) #check class (is character)
+
+#Change "Birthday" from a character variable to a date variable 
+C1survey3 <- transform(C1survey3, Birthday = as.Date(as.character(Birthday), "%m/%d"))
+class(C1survey3$Birthday) #check class (is date)
+
+#Next, I will make a new variable called "bseason" using the Birthday variable
+C1survey4 <- C1survey3 %>%
+  mutate(bseason=ifelse(Birthday>='2020-12-01'|Birthday<'2020-02-29', "winter", ifelse(Birthday>='2020-03-01'& Birthday<='2020-05-31', "spring", ifelse(Birthday>='2020-06-01'& Birthday<='2020-08-31', "summer", "fall"))))
+
+view(C1survey4)
+```
+
+**7. b. Using the table function, print a table of Seasons in the columns and bmonths in the rows that allows you to check that the coding is correct** 
+**7. c. Sum the columns using the addmargins function to answer the question of how many classmates were born in each season? Include your answer in the code you turn in.**
+
+After creating the table and summing the columns, it was determined that 10 students were born in the Fall, 10 in the Spring, 15 in the Summer, and 13 in the Winter. Please see code and output below.
+
+```{r}
+C1survey4 %$%
+  table(BMonth2, bseason)
+
+
+A <- table(C1survey4$BMonth2, C1survey4$bseason)
+addmargins(A) #Fall=10, Spring=10, Summer=15, Winter=13
+```
+
+**8. Pick your favorite variable to analyze, come up with a question you want to answer with that variable, generate the code, and provide an answer to your question. Describe what you did using comments (i.e. #'s).**
+
+I decided to analyze the variable, "Day of the Week" to see what students' favorite day of the week was. First, I did a quick scan of the variable. Next, I added the margins to get totals for each day. I discovered that 2 people like Monday, no one likes Tuesday or Wednesday, 8 people like Thursday, 19 people like Friday, 13 like Saturday, and 6 people enjoy the "Sunday scaries." I also wanted to visualize the data, so I created a colorful bar chart (displayed below).
+
+```{r include=FALSE, results='hide'}
+
+#Which day of the week is most popular?
+view(C1survey4$Day.of.Week) #first, we will quickly scan the variable
+
+B <- C1survey4 %$%
+  table(ID, Day.of.Week)
+addmargins(B) #Next, create a table of "Day of Week" and add the margins (answer below)
+#Monday = 2
+#Tuesday = 0
+#Wednesday = 0
+#Thursday = 8
+#Friday = 19
+#Saturday = 13
+#Sunday = 6
+
+C1survey4$Day.of.Week <- factor(C1survey4$Day.of.Week,levels = c("Monday", "Thursday", "Friday", "Saturday", "Sunday")) #Need to reorder days of the week, so that it does not plot strangely 
+
+b <- C1survey4 %>%
+  ggplot(aes(x=Day.of.Week)) #assign data to "b"
+
+b <- b + geom_bar() #this says, "I want my graph to be a bar chart"
+b
+
+b <- b + geom_bar(fill = c("red", "orange", "yellow", "green", "blue")) #fill the bars in pretty colors
+b
+
+b <- b + theme(legend.position = "none", #this will get rid of the legend
+               text = element_text(color="purple"), #will change color of lables to purple
+               axis.text = element_text(color="black", size=15)) #change color and size of text for values
+
+```
+
+```{r, echo=FALSE}
+
+b <- b + labs(x="", title = "People love the weekend and thirsty Thursday. Why do people also love Monday?", y="")
+b #delete the x and y variable names from the chart and add a weird title
+
+```
+
+####Yummmmmm pizza
+
+![Racoons enjoy pizza...and using R!](https://i.imgur.com/5w6miw9.jpg)

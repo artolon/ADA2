@@ -1,0 +1,256 @@
+---
+title: "TolonA_HW6"
+author: "Abbie Tolon"
+date: "February 26, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Introduction.* This homework will use data from the 2016 GSS dataset. Information about this dataset can be found here: https://gssdataexplorer.norc.org/pages/show?page=gss%2Fabout. We will use three variables from this dataset, age, sex, and number of children. We will model the rate of children by sex and age. Note we will not perform all tests that we should do with any data analysis (e.g. testing functional form of predictors, outlier tests) for the sake of time, instead we will just emphasize what is unique to running these types of models.
+
+Run the below code to create RR function for generating IRRs and 95% CIs for Poisson models only.
+
+```{r}
+
+#remove(list = ls())
+
+glm.RR <- function(GLM.RESULT, digits = 2) {
+
+    if (GLM.RESULT$family$family == "binomial") {
+        LABEL <- "OR"
+    } else if (GLM.RESULT$family$family == "poisson") {
+        LABEL <- "RR"
+    } else {
+        stop("Not logistic or Poisson model")
+    }
+
+    COEF      <- stats::coef(GLM.RESULT)
+    CONFINT   <- stats::confint(GLM.RESULT)
+    TABLE     <- cbind(coef=COEF, CONFINT)
+    TABLE.EXP <- round(exp(TABLE), digits)
+
+    colnames(TABLE.EXP)[1] <- LABEL
+
+    TABLE.EXP
+}
+```
+
+Import GSS data and do some data management
+
+```{r}
+library(foreign)
+## Warning: package 'foreign' was built under R version 3.5.2
+  read.dct <- function(dct, labels.included = "yes") {
+      temp <- readLines(dct)
+      temp <- temp[grepl("_column", temp)]
+      switch(labels.included,
+             yes = {
+                 pattern <- "_column\\(([0-9]+)\\)\\s+([a-z0-9]+)\\s+(.*)\\s+%([0-9]+)[a-z]\\s+(.*)"
+                 classes <- c("numeric", "character", "character", "numeric", "character")
+                 N <- 5
+                 NAMES <- c("StartPos", "Str", "ColName", "ColWidth", "ColLabel")
+             },
+             no = {
+                 pattern <- "_column\\(([0-9]+)\\)\\s+([a-z0-9]+)\\s+(.*)\\s+%([0-9]+).*"
+                 classes <- c("numeric", "character", "character", "numeric")
+                 N <- 4
+                 NAMES <- c("StartPos", "Str", "ColName", "ColWidth")
+             })
+      temp_metadata <- setNames(lapply(1:N, function(x) {
+          out <- gsub(pattern, paste("\\", x, sep = ""), temp)
+          out <- gsub("^\\s+|\\s+$", "", out)
+          out <- gsub('\"', "", out, fixed = TRUE)
+          class(out) <- classes[x] ; out }), NAMES)
+      temp_metadata[["ColName"]] <- make.names(gsub("\\s", "", temp_metadata[["ColName"]]))
+      temp_metadata
+  }
+
+  read.dat <- function(dat, metadata_var, labels.included = "yes") {
+      read.fwf(dat, widths = metadata_var[["ColWidth"]], col.names = metadata_var[["ColName"]])
+  }
+
+GSS_metadata <- read.dct(
+  "https://raw.githubusercontent.com/kijohnson/ADA_Spring_2019/master/Class%206/Class_6_data/GSS.dct")
+GSS_ascii <- read.dat(
+  "https://raw.githubusercontent.com/kijohnson/ADA_Spring_2019/master/Class%206/Class_6_data/GSS.dat", 
+  GSS_metadata)
+attr(GSS_ascii, "col.label") <- GSS_metadata[["ColLabel"]]
+GSS <- GSS_ascii
+
+#recode sex as 1 for male and 0 for female
+GSS$SEX[GSS$SEX==1]<-1
+GSS$SEX[GSS$SEX==2]<-0
+
+GSS$SEX<-factor(GSS$SEX, levels=c(0,1), labels=c("Female", "Male"))
+```
+
+Load libraries (note you may have to install associated packages)
+
+```{r}
+# Load MASS for negative bin
+library(MASS)
+# Load ggplot for graphing
+library(ggplot2)
+## Warning: package 'ggplot2' was built under R version 3.5.2
+# Load lmtest library for coeftest
+library(lmtest)
+## Warning: package 'lmtest' was built under R version 3.5.2
+## Loading required package: zoo
+## 
+## Attaching package: 'zoo'
+## The following objects are masked from 'package:base':
+## 
+##     as.Date, as.Date.numeric
+# Load sandwich library for robust estimator
+library(sandwich)
+#load stargazer library to view a comparison of standard errors
+library(stargazer)
+
+library(tidyverse)
+## 
+## Please cite as:
+##  Hlavac, Marek (2018). stargazer: Well-Formatted Regression and Summary Statistics Tables.
+##  R package version 5.2.2. https://CRAN.R-project.org/package=stargazer
+```
+
+##1. First look at the distribution of reported number of children in the dataset using a histogram to see if it roughly follows a Poisson distribution.
+
+```{r}
+#Creating a histogram to see if the data roughly follow a poisson distribution
+hist(GSS$CHILDS, breaks = c(0,1,2,3,4,5,6,7,8,9,10))
+
+#The data are very right-skewed, so it does appear to follow a poisson distribution 
+```
+
+##2. Do males have less children on average than females? Determine the answer to this question prior to modeling and write the answer in a full sentence. No p-values needed for this answer.
+
+```{r}
+#Calculate average number of children, and group by sex 
+GSS %>%
+    group_by(SEX) %>%
+    dplyr::summarize(Mean = mean(CHILDS, na.rm = TRUE))
+
+#On average, males have fewer children (mean=1.77) than do females (mean=1.95)
+```
+
+##3a. Run two univariate poisson models to determine if the rate of children varies by SEX and AGE (and use the summary function to see the results), 
+##3b. Describe how the rate of children varies by SEX and AGE using incidence rate ratios (hint: you can use the glm.RR function to get IRRs here).
+
+```{r}
+
+#Part A:
+#Running univariate model for determining rate of children by sex
+model.a1 <- glm(CHILDS ~ SEX, family ="poisson", data = GSS)
+summary(model.a1) 
+
+#mean counts for females = 1.95
+exp(0.66929)
+
+#mean counts for males = 1.77
+exp(0.66929-0.09766)
+
+#Summary shows that the rate of having children does seem to vary statistically signifcantly by sex. 
+
+#Running univariate model for determining rate of children by age
+model.a2 <- glm(CHILDS ~ AGE, family ="poisson", data = GSS)
+summary(model.a2) 
+#The rate of having children also seems to vary statistically significantly by age
+
+#Part B:
+glm.RR(model.a1, 2) #The rate of having kids among males is 9% lower than the rate of having kids, among females 
+
+glm.RR(model.a2, 2) #With every year increase in age, the rate of having children increases by 2%
+```
+
+##4. We discussed in class that Poisson models are often inappropriate because the conditional variance exceeds the conditional mean. To check for overdispersion, we can run a negative binomial model and then use the LR test to see if adding an overdispersion paremeter improves the model fit. 
+
+##a. Run two negative binomial models, one for SEX and one for AGE
+##b. Check for overdispersion using the lrtest function to compare the Poisson and negative binomial models for both SEX and AGE to see if running a negbin model improves fit. Interpret the output.
+
+```{r}
+library(lmtest) #model comparison
+
+#a. Running two negative binomial models, one for sex and one for age
+model.a1nb <- glm.nb(CHILDS ~ SEX, data = GSS)
+summary(model.a1nb)
+
+model.a2nb <- glm.nb(CHILDS ~ AGE, data = GSS)
+summary(model.a2nb)
+
+#b. Checking for overdispersion using the lrtest function
+#Comparing the poisson and the negative binomial models
+
+#SEX
+lmtest::lrtest(model.a1, model.a1nb)
+#The negative binomial model is statistically significantly better than the poisson model [Chi-sqaure(3)=332.33, p<0.05]. This means there is overdispersion and running a negbin model improves fit. 
+
+#AGE
+lmtest::lrtest(model.a2, model.a2nb)
+#The negative binomial model is statistically significantly better than the poisson model [Chi-sqaure(3)=170.31, p<0.05]. This means there is overdispersion and running a negbin model improves fit. 
+```
+
+##5. Use the stargazer function to compare SEs for SEX and AGE from the Poisson and negative binomial models. Interpret the output (in terms of how the SEs compare in size between Poisson and negative binomial regression).
+
+```{r}
+#Stargazer function to compare SEs for SEX and AGE
+library(stargazer)
+
+#SEX
+stargazer(model.a1, model.a1nb, title="Model Comparison",
+          type="text",align=TRUE,single.row=TRUE, digits=6)
+#According to the output, the standard errors are smaller in the poisson distribution than in the negative binomial distribution. This can bias the results, and potentially make non-significant predictors significant 
+
+#AGE
+stargazer(model.a2, model.a2nb, title="Model Comparison",
+          type="text",align=TRUE,single.row=TRUE, digits=6)
+#According to the output, the standard errors are smaller in the poisson distribution than in the negative binomial distribution. This can bias the results, and potentially make non-significant predictors significant 
+```
+
+##6. Determine if AGE, an independent predictor of the number of children, improves the model fit for the negative binomial model estimating the effect of SEX on the rate of children. HINT: use the LR test to compare the negative binomial models for SEX with and without AGE included as a covariate. What conclusion can you make from the LR test results?
+
+```{r}
+#Revisit univariate negbin model with only SEX
+summary(model.a1nb)
+
+#Make a new model that adds AGE 
+model.b1nb <- glm.nb(CHILDS ~ SEX + AGE, data = GSS)
+summary(model.b1nb)
+
+#compare the models
+lmtest::lrtest(model.a1nb, model.b1nb)
+
+#Based on the output, it appears that adding age to the model statistically significantly improves the model fit [Chi-sq(4)=370.21, p<0.05]. Therefore, more variation in "CHILDS" is explained with the addition of age to the model. 
+```
+
+##7. We learned in class that it is a good idea to use robust standard errors for both Poisson and negative binomial regression models. Use robust standard errors for your negative binomial model from #6 that includes SEX and AGE. Save the model results as an object called 'robust' and look at the results by printing 'robust'.
+
+```{r}
+#load sandwich for robust SEs
+library(sandwich)
+
+#Needed for calculating the robust standard errors for negbin model 
+j <- vcovHC(model.b1nb, type="HC0") 
+
+#estimate robust standard error for each coefficient
+est.rob <- sqrt(diag(j)) 
+
+#Make small table to show results in a format that is easy to read 
+robust <- cbind(Estimate= coef(model.b1nb), "Robust SE" = est.rob)
+
+#Print the results/table
+robust
+```
+
+##8. Calculate the IRR for the effect of sex on the rate of children from the negative binomial model that includes SEX and AGE as covariates. You can modify the below code to do this. Interpret the IRR for SEX from the model.
+
+```{r}
+est <- cbind(IRR = coef(model.b1nb), "2.5%"=robust[,1]-1.96*robust[,2], 
+             "97.5%"=robust[,1]+1.96*robust[,2])
+exp(est)
+
+#The rate of having kids among males is about 9% lower than the rate of having kids, among females 
+```
+

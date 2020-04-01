@@ -1,0 +1,275 @@
+---
+title: "HW5_Tolon"
+author: "Abbie Tolon"
+date: "February 19, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##0. Conduct any data import and library steps needed to complete this homework using below code.
+
+```{r }
+#rm(list = ls()) #clear global environment
+
+library(dplyr)
+library(ggplot2)
+library(odds.n.ends)
+library(car)
+
+BRFSS<-read.csv(
+"https://raw.githubusercontent.com/kijohnson/ADA_Spring_2019/master/BRFSS2017_10percent_v2.csv", 
+header=TRUE, sep=",", na.strings=FALSE)
+
+#code to drop X column, which is not needed
+col.dont.want<-"X"
+BRFSS<-BRFSS[,!names(BRFSS)%in%col.dont.want, drop=F]
+print(head(BRFSS))
+```
+
+## Look at each variable used in the analysis to get a handle on class, observation numbers, missing data etc.
+
+```{r}
+#check class of variables
+class(BRFSS$bmi) #is factor
+class(BRFSS$seatbelt)#some missing/refused data (is factor)
+class(BRFSS$sex) #is factor
+class(BRFSS$X_AGE80) #is integer
+
+#use table function to look at categorical variable numbers
+table(BRFSS$seatbelt)#some missing/refused data
+table(BRFSS$sex)#some refused data
+
+#use summary function to look at continuous variables
+summary(BRFSS$X_AGE80)#no missing data
+BRFSS$bmi<-as.numeric(as.character(BRFSS$bmi))
+summary(BRFSS$bmi)#no missing data
+```
+
+##1. The first steps you take in this analysis are: a. You make a new seatbelt variable categorizing seatbelt use as 'Always' vs. 'Not always' with 'Always' being coded as 1 and 'Not always' being coded as 0 (include 'Never', 'Sometimes', and 'Nearly always' in your 'Not always' category). b. You cross-check how many observations are in the new binary seatbelt category with the original variable to make sure that the number is correct.
+
+a) Make the new dichotomous seatbelt variable
+
+```{r}
+#First, viewing unique values because it's difficult for me to tell what all the value names are via the console
+View(unique(BRFSS$seatbelt))
+
+#First changing seatbelt to a character variable, so that the recoding works properly
+BRFSS$seatbelt <- as.character(BRFSS$seatbelt)
+
+#Check the class
+class(BRFSS$seatbelt) #is character 
+
+#Next, recode the seatbelt variable into "Always" and "Not Always"
+
+#Always=1
+BRFSS$seatbelt_binary[
+  BRFSS$seatbelt=="Always"]<-1 #Assign 1 to those who responded "Always" to the seatbelt question
+
+#Not Always=0
+BRFSS$seatbelt_binary[
+  BRFSS$seatbelt=="Never"|BRFSS$seatbelt=="Sometimes"|BRFSS$seatbelt=="Nearly always"|BRFSS$seatbelt=="Seldom"]<-0 #Assign 0 to those who responded "Never", "Sometimes", "Nearly always", or "Seldom" to the seatbelt question. 
+
+#Leaving out the following values from the recode: 
+#"Refused", "NA", "Never drive or ride in a car", and "Don't know/Not sure"
+
+#Make this a factor variable and add applicable labels 
+BRFSS$seatbelt_binary<-factor(BRFSS$seatbelt_binary, levels=c(0,1), labels=c("Not Always", "Always"))
+```
+
+b) Cross-check to see how many observations are in the new binary category 
+
+```{r}
+#check to make sure re-classification worked
+table(BRFSS$seatbelt, BRFSS$seatbelt_binary) #the recoding looks good!
+```
+
+##2. An important first step in any regression modeling exercise is to know your data. One of the components of knowing your data includes data visualization. You decide to make a box plot to visually examine how the distribution of bmi varies by the binary seatbelt use variable.
+
+For comparing regression models, it is important to have the same number of observations. For this analysis we will do a complete case analysis. The below code creates an analytic dataset and removes any observations with missing/refused values for variables to be used in data analysis.
+
+```{r}
+#Complete case analysis exclusions of missing/refused data
+myvars<-c("rowID", "X_AGE80", "age_cat", "sex", "bmi", "seatbelt_binary")
+BRFSS_ex<-BRFSS[myvars]
+BRFSS_ex<-na.omit(BRFSS_ex)
+BRFSS_ex<-BRFSS_ex[which(BRFSS_ex$sex!="Refused"),]
+BRFSS_ex<-BRFSS_ex[which(BRFSS_ex$age_cat!="Don't know/refused/missing"),]
+```
+
+Now that we have complete cases, we can visualize the data with box plots
+
+```{r}
+#Make a box plot to visually examine how the distribution of bmi varies by the binary seatbelt use variable 
+
+#First, check the class 
+class(BRFSS_ex$seatbelt_binary) #Is numeric 
+BRFSS_ex$seatbelt_binary<- as.factor(BRFSS_ex$seatbelt_binary) #changing to factor 
+
+#plot the boxplots with seatbelt and bmi
+BRFSS_ex %>% 
+  ggplot(aes(x = seatbelt_binary, y = bmi)) +
+  geom_boxplot(aes(fill = seatbelt_binary)) +
+  labs(x = "Wears a Seatbelt (Not Always vs. Always)", y = "BMI (kg/m2)") +
+  theme_bw() +
+   theme(plot.title = element_text(hjust = 0.5), 
+        legend.background = element_rect(color = "black", 
+                                         fill = "gray")) 
+```
+
+##3. You check whether running age and bmi as continous variables is appropriate for your regression models. You describe whether it is appropriate or not for each variable.
+
+Completing the test for BMI first
+
+```{r}
+#Use Box Tidwell approach
+linearTermBMI <- BRFSS_ex$bmi * log(BRFSS_ex$bmi) #creating the term to test for linearity 
+
+#Testing assumption of linearity using the box tidwell technique 
+BoxTidBMI <- glm(seatbelt_binary ~ bmi + linearTermBMI, data = BRFSS_ex, family = "binomial")
+
+#View results
+summary(BoxTidBMI)
+
+#The coefficient for the interaction term we created is NOT significant.
+#Therefore, it IS appropriate to use BMI in our model 
+```
+Completing the same procedure now, for age
+
+```{r}
+#Use Box Tidwell approach
+linearTermAge <- BRFSS_ex$X_AGE80 * log(BRFSS_ex$X_AGE80) #creating the term to test for linearity 
+
+#Testing assumption of linearity using the box tidwell technique 
+BoxTidAge <- glm(seatbelt_binary ~ X_AGE80 + linearTermAge, data = BRFSS_ex, family = "binomial")
+
+#View results
+summary(BoxTidAge)
+
+#The coefficient for the interaction term we created is NOT significant. 
+#Therefore, it IS appropriate to use Age in our model 
+```
+
+##4. You make the decision based on these results to first run a univariate logistic regression model for bmi and calculate ORs and 95% CIs.
+
+```{r}
+#seatbelt univariate logistic model with bmi as the variable
+bmiLogit <- glm(seatbelt_binary ~ bmi, data=BRFSS_ex, family="binomial")
+  summary(bmiLogit)
+  
+#calculate and print ORs and 95% CIs  
+  ORbmi<-exp(cbind(OR = coef(bmiLogit), confint(bmiLogit))) #calculate ORs and 95% CIs
+  ORbmi #print ORs and 95% CIs
+```
+
+##5. You then decide to run a multivariate logistic regression model that includes bmi plus age_cat and sex in the model as covariates.
+
+```{r}
+#Multivariate logistic model for age, bmi, and sex
+bmiagesexLogit <- glm(seatbelt_binary ~ as.factor(age_cat) + bmi + as.factor(sex), data=BRFSS_ex, family="binomial")
+  summary(bmiagesexLogit)
+#Note to self: Female is reference; Age 18-24 is reference
+  
+#calculate and print ORs and 95% CIs  
+ORmodel<-exp(cbind(OR = coef(bmiagesexLogit), confint(bmiagesexLogit))) #calculate ORs and 95% CIs
+  ORmodel #print ORs and 95% CIs
+```
+
+##6. Next, you look for influential observations and determine the top 5 influential observations using a Cook's Distance plot.
+
+```{r}
+#Cook's D plot
+plot(bmiagesexLogit, which=4, id.n=5, col="red", cex.id=0.6) 
+
+#The top 5 influental observations are #674, #8238, #11076, #13764, #42346
+```
+
+##7. Based on these findings, you exclude the top 5 influential observations and compare Betas for bmi between models with and without these observations.
+
+```{r}
+#dropping the top 5 influential observations (674, 8238, 11076, 13764, 42346)
+bmiagesexLogit.modex <- update(bmiagesexLogit,subset=c(-674, -8238, -11076, -13764, -42346))
+
+#compare coefficients between models with and without influential observations
+compareCoefs(bmiagesexLogit, bmiagesexLogit.modex) 
+```
+
+##8. Next, you decide to evaluate model classification performance. First, you run the below code to generate a balanced sample to improve model performance since unbalanced models will give poor sensitivity or specificity
+
+Running below code to generate balanced sample and improve model performance
+
+```{r}
+#create new dataset with diabetes_binary= 0
+#table(BRFSS_ex$seatbelt_binary)
+set.seed(1)
+BRFSS_one<-sample_n(BRFSS_ex[which(BRFSS_ex$seatbelt_binary=='Always'),], size=4265) # sample from always seat belt wearers to make them 1:1 as not always seat belt wearers
+
+BRFSS_zero<-BRFSS_ex[which(BRFSS_ex$seatbelt_binary=='Not Always'),] # Not always seatbelt wearers only
+
+BRFSS_balance<- rbind(BRFSS_zero,BRFSS_one) #Combine these datasets by row 
+
+table(BRFSS_balance$seatbelt_binary)
+```
+
+You then take the following steps to evaluate model performance. 
+
+a. You run your model again with the new dataset you created. 
+
+```{r}
+#Multivariate logistic model for age, bmi, and sex with the new dataset (BRFSS_balance)
+bmiagesexLogit2 <- glm(seatbelt_binary ~ bmi + age_cat + sex, data=BRFSS_balance, family="binomial")
+  summary(bmiagesexLogit2)
+#Note to self: Female is reference; Age 18-24 is reference
+  
+#calculate and print ORs and 95% CIs  
+ORmodel<-exp(cbind(OR = coef(bmiagesexLogit2), confint(bmiagesexLogit2))) #calculate ORs and 95% CIs
+  ORmodel #print ORs and 95% CIs
+```
+
+b. You determine the number of 'Always' seatbelt wearers vs. 'Not always' seatbelt wearers predicted by your model. 
+
+c. From these numbers (and the actual data), you calculate and report the sensitivity and specificity of your model (hint: you can use the odds.n.ends function for both b and c). 
+
+```{r}
+#Use odds.n.ends function to calculate the sensitivity and specificity of the model and to view predicted vs. observed 
+odds.n.ends(bmiagesexLogit2)
+
+#There are 3637 total "Always" seatbelt wearers predicted, vs. 5373 "Not Always" seatbelt wearers predicted 
+
+#The sensitivity of our model is 51.84% and the specificity of our model is 69.94%; the model correctly predicts a positive result (Always wears a seatbelt) 51.84% of the time, and correctly predicts a negative results (Not Always wears a seatbelt) 69.94% of the time. 
+```
+
+d. You then generate an ROC curve and report the AUC.
+
+```{r}
+#First plot/generate the ROC curve
+preds<-predict(bmiagesexLogit2, newdata=BRFSS_balance, type='response') #get predicted probabilities from the model (bmiagesexLogit2) and the actual values for seatbelt from the BRFSS_balance dataset
+
+ROCR=prediction(as.numeric(preds), as.numeric(BRFSS_balance$seatbelt_binary)) #predicted probs, values of dependent variable. *Note need as.numeric specification for below
+
+perf=performance(ROCR,"tpr", "fpr") # tpr is what to plot on y axis and fpr is what to plot on x axis
+plot(perf, colorsize=T, color="red", print.cutoffs.at=seq(0,1,0.1))
+abline(a=0, b= 1)
+
+#Next, obtain the threshold value from the curve with the highest sensitivity and specificity
+ss <- performance(ROCR, "sens", "spec")
+plot(ss)
+ssval<-ss@alpha.values[[1]][which.max(ss@x.values[[1]]+ss@y.values[[1]])]
+ssval
+
+#Set threshold at 0.4855555 and get a confusion matrix
+t=0.4855555
+pred_class=ifelse(preds>t, 'Always','Not Always')
+addmargins(table(pred_class=pred_class,observed=BRFSS_balance$seatbelt_binary))
+
+#Now, get the AUC
+auc.perf = performance(ROCR, measure = "auc")
+auc.perf@y.values
+
+#The AUC is only 0.643; this means it does not do a great job at predicting people who always wear a seatbelt. 
+```
+##9. Finally, you interpret the results from this analysis in one paragraph.
+
+The above analysis was conducted to see whether there was a statistically significant logistic regression model that could predict the probability of whether a person "always" wears a seatbelt, based on their age, sex, and bmi. After cleaning the data and creating a balanced sample, various statistical analyses were completed. After running the full and final logistic model, it was determined that each variable statistically significantly predicted the probability of always wearing a seatbelt, meaning we reject the null hypotheses for our predictors. Additionally, sensitivity and specifity were calculated to see how well our model does at correctly predicting whether a person always or does not always wear a seatbelt. The analysis displayed that our model was more specific than sensitive. In other words, it did better at correctly predicting those who do not always wear a seatbelt (70%) than it did at correctly predicting those who always wear a seatbelt (52%). Finally, an ROC curve was generated in order to report the AUC. The AUC displayed that, while the model is technically statistically significant, it does not actually do a great job at predicting the probability that a person always wears a seatbelt. Therefore, researchers must proceed with caution when utilizing this model to make predictions on seatbelt use.

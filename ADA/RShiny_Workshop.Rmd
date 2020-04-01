@@ -1,0 +1,87 @@
+---
+title: "RShiny Workshop"
+author: "Abbie Tolon"
+date: "February 12, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Instructions
+
+Install the shiny package
+Install the shinythemes package
+Install the rsconnect package
+
+```{r}
+#install.packages("shiny")
+#install.packages("shinythemes")
+#install.packages("rsconnect")
+
+library("shiny")
+library("shinythemes")
+library("rsconnect")
+```
+
+## Presentation 
+
+R Shiny allows you to build web apps that can be hosted locally or publicly (used for entertainment, dashboards, data visualization, and sharing information)
+
+The computer has to be actively running R while you're running the Shiny app
+
+##Main Steps 
+1. Write a program in R
+2. Convert it to Shiny app
+3. Make it pretty!
+4. Host it somewhere to share 
+
+```{r pressure, echo=FALSE}
+#Template for creating the input (ui="user interface")
+ui <- fluidPage(
+  sliderInput(inputId = "num",
+              label = "Choose a number",
+              value = 25, min = 1, max = 100),
+  plotOutput('scatplot') #name of the output object = scatplot; type of output=plot
+) 
+```
+
+```{r}
+server <- function(input, output){
+  #randomly generate x and error
+x=rnorm(200, mean=50, sd=20)
+e=rnorm(200, mean=0, sd=300)
+
+#render draws it in such a way that it's compatible with the ui. 
+output$scatplot <- renderPlot({
+beta <- input$num
+y=10 + beta*x + e
+
+#the regression function 
+dat <- as.data.frame(x,y)
+
+#Create scatter plot
+ggplot(dat, aes(x,y)) + theme_bw() + geom_point(col="purple", size=2, alpha=.5)})}
+
+shinyApp(ui=ui, server=server)
+```
+
+##Building the User Interface
+Need an input and an output (refer to template in code chunk above)
+Next, you build the server code
+
+##Reactivity
+
+Input objects have to be nested within a render function 
+
+```{r}
+#Secret code from shinyapps.io to be able to work on my computer 
+rsconnect::setAccountInfo(name='abbie-rose', token='00BD5A2A399EDA1E30FFA9343E61F349', secret='6l498BjWi7qylVXAJ4i2mwu5N/OSUih0s/vLw9IP')
+```
+
+reactive() creates an object
+reactiveValues() creates a list
+observeEvent() triggers code to run on server 
+
+##Make things pretty!

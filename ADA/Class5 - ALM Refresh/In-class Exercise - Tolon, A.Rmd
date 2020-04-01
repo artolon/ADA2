@@ -1,0 +1,238 @@
+---
+title: "In-Class Exercise"
+author: "Abbie Tolon"
+date: "February 12, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load and Install the necessary packages
+
+Use data for North Carolina births in the statsr package to follow the procedure described in today's lecture. Choose 1 outcome and at least 2 predictors.
+
+```{r echo=FALSE, results='hide', message=FALSE}
+#installing the package
+install.packages("statsr")
+#loading the package and data
+library(statsr)
+data(nc)
+
+#looking at data
+summary(nc)
+view(nc)
+
+#Omit the NAs from your variables of interest 
+myvars <- c("weight", "weeks", "visits", "premie", "gained", "habit")
+ncb <- nc[myvars]
+ncb <- na.omit(ncb)
+```
+
+##Visualize the Relationship
+
+Outcome = "weight" --> weight of the baby at birth in pounds
+Predictors = 1) weeks --> length of pregnancy in weeks
+             2) visits --> number of hospital visits during pregnancy
+
+```{r eval = FALSE}
+#plot the relationship between weight, and length of pregnancy
+ggplot(ncb, aes(y = weight, x = weeks)) + 
+  geom_smooth(method = "lm", se = FALSE, na.rm = T) +
+  geom_jitter(na.rm = T) +
+  geom_point(na.rm = T, size = 2, alpha = .2) + 
+  labs(title = "Weight of a baby at birth and length of pregnancy",
+       y = "Weight of the baby at birth in pounds",
+       x = "Length of pregnancy in weeks") +
+  theme_bw()
+```
+---
+
+```{r echo = FALSE, message = FALSE}
+#load tidyverse
+library(tidyverse)
+
+#plot the relationship between weight, number of hospital visits, and length of pregnancy consumption
+ggplot(ncb, aes(y = weight, x = weeks + visits)) + 
+  geom_smooth(method = "lm", se = FALSE, na.rm = T) +
+  geom_jitter(na.rm = T) +
+  geom_point(na.rm = T, size = 2, alpha = .2) + 
+  labs(title = "Weight of a baby at birth with length of pregnancy and number of hospital visits",
+       y = "Weight of the baby at birth in pounds",
+       x = "Length of pregnancy in weeks + number of hospital visits") +
+  theme_bw()
+```
+
+- The relationship appears to be clearly positive, between length of pregnancy, number of hospital visits, and weight of the baby
+
+---
+
+# Modeling our Data
+
+- In order to model our data, we use the lm() function, which stands for linear model.
+- For our linear model, our outcome is weight and our predictor of interest is length of pregnancy.
+- Our model looks like this in R:
+
+```{r}
+weight.mod <- lm(weight ~ weeks + visits, data = ncb)
+```
+
+---
+
+# Examining our results
+
+- In order to see our results, we have to wrap summary() around our model object.
+
+```{r}
+summary(weight.mod)
+```
+- It looks like our prediction based on the visualization was correct. The length of pregnancy is statistically significant, but number of hosptial visits is not.
+
+---
+
+# Multivariate linear model
+
+- Next, let's add a few confounders to our model - premie, gained, and habit
+- The model now looks like this:
+- Our model looks like this in R:
+
+```{r}
+weight.mod2 <- lm(weight ~ weeks + visits + premie + gained + habit, data = ncb)
+```
+
+---
+
+# Results of multivariate model
+
+- Now we can use summary() again to look at our multivariate model.
+
+```{r}
+summary(weight.mod2)
+```
+
+- Length of pregnancy is still significant, but our confounders are significant as well! 
+
+- We can now fill in our linear model as follows: weight = -4.12 + 0.29(weeks) + 0.001(visits) - 0.5(premie) + 0.01(gained) - 0.38(habit)
+
+---
+
+# Evaluating estimates
+
+- Given the p value, we can make conclusions about whether we reject or fail to reject the null (slope = 0).
+
+- We can also get confidence intervals using confint()
+
+```{r}
+confint(weight.mod2)
+```
+
+- This tells us the range of possible values in the population.
+
+---
+
+# Interpreting estimates
+
+- For continous variables, such as gained, we would interpret this as the change in weight given a 1 unit increase in weight gained during pregnancy.
+
+- For categorical variables, such as habit, this is the change in weight for someone who dsmokes verses someone who doesn't.
+
+- Understanding these interpretations is also useful for case prediction based on specified values.
+
+---
+
+# Evaluating the model
+
+- There are two primary things to look at when evaluating model fit: the F statistic and adjusted R squared.
+- The F statistics and accompanying p value tells us whether the model is better than the mean/null model at explaining variation in the outcome. When the p value is less than .05, that means that we can reject the null that the model is the same as the null model in terms of its ability to explain the outcome.
+- The R squared tells us how much of the variation (%) is explained by the model. For instance, in our model, the adjusted R squared is .31, therefore the model explains 31% of the variation in weight.
+
+---
+
+# Assumptions
+
+- There are four assumptions that need to be fulfilled in order to generalize our model to the population.
+- First, there needs to be a linear relationship between predicted values and residuals.
+- Second, there must be independence of residuals.
+- Third, residuals need to be distributed normally
+- Lastly, there needs to be equal variance of residuals.
+
+---
+```{r echo= FALSE, results = 'hide'}
+ncb$predicted <- predict(weight.mod2)
+ncb$residuals <- residuals(weight.mod2)
+```
+# Checking linearity
+
+- In order to check linearity, we can look at a scatterplot for predicted weight and residuals.
+
+```{r error = FALSE, message = FALSE, warning =  FALSE, eval = FALSE}
+# check linearity of plot of residuals and predicted values 
+ggplot(ncb, aes(y = residuals, x = predicted)) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_smooth(se = FALSE) +
+  geom_point(size = 2, alpha = .2) + 
+  labs(y = "Residuals (unexplained variability)",
+       x = "Predicted weight") + theme_bw() + 
+  ggtitle("Residuals and predicted values")
+```
+---
+
+```{r error = FALSE, message = FALSE, warning =  FALSE, echo=FALSE}
+# check linearity of plot of residuals and predicted values 
+ggplot(ncb, aes(y = residuals, x = predicted)) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_smooth(se = FALSE) +
+  geom_point(size = 2, alpha = .2) + 
+  labs(y = "Residuals (unexplained variability)",
+       x = "Predicted weight") + theme_bw() + 
+  ggtitle("Residuals and predicted values")
+```
+
+---
+
+# Checking indepedence
+
+- Next, we can check independence using the Durbin-Watson test, in which the null hypothesis is that the residuals ARE independent.
+
+```{r message=FALSE, echo=FALSE}
+#install.packages("lmtest")
+# test the residuals for independence 
+library(lmtest)
+```
+
+```{r}
+#check residuals for independence
+dwtest(weight.mod2)
+```
+---
+
+# Checking normality
+
+- We can check normality of residuals using the Shapiro-Wilk test, in which the null hypothesis is that the residuals ARE normally distributed.
+
+```{r}
+# check normality statistically with the Shapiro-Wilk test
+shapiro.test(ncb$residuals)
+```
+We fail to reject the null here, so our residuals are NOT normally distributed 
+ 
+---
+
+# Checking homoscedasticity
+
+- Lastly, we can use the Breusch-Pagan test to see whether our residuals have constant variance. In this test, the null hypothesis is that variance IS constant.
+
+```{r echo = TRUE}
+# check homoscedasticity with bp test
+bptest(weight.mod2)
+```
+We must reject the null hypothesis. Therefore, our variance is NOT constant. 
+
+---
+
+# What to do when failing assumptions
+
+- Report results with generalizing to the population
+- Re-specify the model with different (BUT APPROPRIATE) variables
+- Transform variables

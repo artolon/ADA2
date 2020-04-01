@@ -1,0 +1,373 @@
+---
+title: "Class One Getting Started"
+author: "Kim Johnson"
+date: "January 15, 2020"
+output:
+  powerpoint_presentation: 
+    reference_doc: template.pptx
+---
+
+## Lecture Outline
+
+- Class Introductions
+- Review course syllabus
+- Getting started with data analysis
+
+---
+
+## Getting help with R and R errors
+
+- My advice: Google 
+- Coders are a tribe of people who help each other
+- This is a standard problem solving (and learning) approach
+- Consult R help by typing *help(topic)* in the console or by searching for the topic in the help window!
+
+---
+
+![](code_cartoon.png)
+
+---
+
+## Learning objectives
+
+-  Understand typical project workflow
+-  Be able to import data
+-  Be able to characterize the dataset
+-  Clean up variables
+-  Derive one variable
+-  Calculate simple statistics
+
+--- 
+
+## Example project workflow
+
+![](Example_project_workflow.png){width=100%}
+
+
+--- 
+
+## A refresher on basic stats tasks in R 
+
+- Installing packages and libraries
+- Reading in files of different types
+- Characterizing the dataset
+- Renaming, cleaning, and creating variables
+- Simple stats (mean, median, etc.)
+
+---
+
+## Open R studio and let's install some packages and libraries
+
+```{r}
+#install.packages("knitr")#for creating nicer tables
+#install.packages("foreign") #for accessing foreign library of functions
+#install.packages("haven") #for accessing haven library of functions
+#install.packages("readr") #for accessing readr libary of functions
+#install.packages("rmarkdown")
+#install.packages("pastecs")
+#install.packages("date")
+
+library(date) #for functions handling dates
+library(pastecs) #for summary statistics
+library(foreign) #for reading spss (read.spss()), stata (read.dta()) and xpt (read.xport()) files
+library(haven) #for reading SPSS (read_sav()), stata (read_dta()), SAS(read_sas()) and xpt (read_xpt()) files
+library(knitr) #for creating nicer tables
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+```
+---
+
+## Let's read in some different file types {.smaller}
+
+- Data are stored on Github when possible and can be imported directly from Github 
+
+- Github class website: https://github.com/kijohnson/ADA_Spring_2020
+
+- **NOTE about copying links to datsets housed on Github:** On Github click on the file you want to import and if it is readable as is (.csv, .txt), copy and paste the link into your R code for reading the file. If not readable as is (e.g. .sav, .xpt, .dta), in the gray 'view Raw box', right click and select 'open link in new window' and copy and paste the link address, which should include the following text in the first part: https://raw.githubusercontent.com...
+
+--- 
+
+## Read in  CSV and Stata files
+
+```{r, echo=TRUE,  warning=FALSE}
+starbucks_csv <-
+ read.csv(
+    "https://raw.githubusercontent.com/kijohnson/ADA_Spring_2020/master/Class%201/starbucks_datasets/starbucks_csv.csv"
+  )#read in csv file
+
+#https://raw.githubusercontent.com/kijohnson/ADA_Spring_2020/master/Class%201/starbucks_datasets/starbucks_csv.csv
+
+starbucks_stata <-
+  read_dta(
+    "https://github.com/kijohnson/ADA_Spring_2020/blob/master/Class%201/starbucks_datasets/starbucks_stata.dta?raw=true"
+  )#read in stata file
+
+```
+
+---
+
+## Read in tab deliminated file
+
+```{r, echo=TRUE,  warning=FALSE}
+
+starbucks_tab <-
+  read.delim(
+    "https://raw.githubusercontent.com/kijohnson/ADA_Spring_2020/master/Class%201/starbucks_datasets/starbucks_tab.txt"
+  )#read in tab file
+```
+
+---
+
+## Read in xpt and spss files 
+
+```{r, echo=TRUE,  warning=FALSE}
+starbucks_xpt <-
+  read_xpt(
+    "https://github.com/kijohnson/ADA_Spring_2020/blob/master/Class%201/starbucks_datasets/starbuck_xpt.xpt?raw=true"
+  )#read in SAS XPT file. Interesting note about this format:
+  #"The SAS transport format is an open format, as is required for submission of the data to the FDA."
+  #(from help page when *??read_xpt* is typed into the console)
+
+starbucks_spss <-
+  read.spss(
+    "https://github.com/kijohnson/ADA_Spring_2020/blob/master/Class%201/starbucks_datasets/starbucks_spss.sav?raw=true", to.data.frame=TRUE
+    )#read in SPSS file
+```
+
+---
+
+## Characterize the datasets (no. of obs, variables, basic summary stats, missing data){.smaller}
+
+```{r, echo=TRUE, eval=FALSE}
+dim(starbucks_xpt) #gives number of rows and columns of dataset (in that order)
+
+options(digits=2) #two decimal places in stat.desc table
+
+stat.desc(starbucks_xpt) #creates nice looking table of summary stats for each variable
+#nbr.val are "avialble values"; nbr.na are "missing"
+
+class(starbucks_xpt$CALORIES) #this will tell you what type of variable it is
+```
+
+---
+
+## Renaming variables
+
+- Point to remember about renaming: always try to use decriptive names rather than x, y, a, b, c. 
+```{r, echo=TRUE, eval=FALSE}
+names(starbucks_xpt)<-c("drink", "category", "calories", "fat (grams)", "carb (grams)", "fiber (grams)", "protein  (grams)") #renames variables in order of appearance; need to have "c" in
+#front of parenthesis for string variables;
+
+stat.desc(starbucks_xpt) #creates nice looking table of summary stats for each variable; 
+#we can also see that the names look nice and pretty!
+
+```
+
+---
+
+## Clean up calories variable/convert to numeric/find mean and median
+
+```{r, echo=TRUE, warning=FALSE, eval=FALSE}
+
+class(starbucks_xpt$calories) #check class of calories
+
+starbucks_xpt$calories<-as.numeric(as.character(starbucks_xpt$calories)) #convert calories variable to numeric, from character, so math can be done
+
+class(starbucks_xpt$calories) #check to make sure calories_n is numeric
+
+stat.desc(starbucks_xpt) #get summary stats (now we have calories in scientific notation, which
+#we want to disable)
+
+#round to 1 decimal place
+options(scipen=999) #disable scientific notation
+
+options(digits=1) #1 digits
+
+stat.desc(starbucks_xpt) #get summary stats
+```
+
+---
+
+## Find mean, median, sd, variance, and quantile
+
+```{r, eval=FALSE}
+mean(starbucks_xpt$calories, na.rm=TRUE) #get mean (must specify to remove the "NA's")
+#remove NA's by typing "na.rm"
+
+median(starbucks_xpt$calories, na.rm=TRUE) #get median
+
+sd(starbucks_xpt$calories, na.rm=TRUE) #get sd
+
+var(starbucks_xpt$calories, na.rm=TRUE) #get variance
+
+quantile(starbucks_xpt$calories, na.rm=TRUE) #get quantile
+```
+
+---
+
+## Categorize calories as binary above and at or below the median, label level values
+
+```{r, echo=TRUE, eval=FALSE, warning=FALSE}
+starbucks_xpt$calories_med[starbucks_xpt$calories > 140] <- 1 #above median
+
+starbucks_xpt$calories_med[starbucks_xpt$calories <= 140] <- 0 #at or below median
+
+class(starbucks_xpt$calories_med) #check the type of variable with class function
+
+starbucks_xpt$calories_med.f<-factor(starbucks_xpt$calories_med,labels = c("Below the median", "Above the median")) #change to factor variable and label levels (left of the arrow is the new variable name)
+
+table(starbucks_xpt$calories_med.f) #determine how many observations are in each level (should be about half, since we're looking at median)
+```
+
+---
+
+## Find mean number of calories for 'Starbucks Espresso Beverages'
+
+```{r, echo=TRUE, eval=FALSE, warning=FALSE}
+espresso<-starbucks_xpt[which(starbucks_xpt$category=='Starbucks Espresso Beverages'),] #subset espresso data; we're making a different dataset that only contains the esspresso data; this is saying "I want to choose the category that is only espresso beverages, within the espresso category of the starbucks dataset". This is a row. We need ", " for column. 
+
+table(espresso$category) #check that subsetting worked by checking number of espresso drinks in parent dataframe; I want to check the category within the espresso data frame
+
+mean(espresso$calories, na.rm=TRUE) #calculate mean number of calories in espresso drinks, removing 'NAs' 
+
+summary(espresso$calories) #another way to see the mean number of calories in espresso drinks
+
+stat.desc(espresso) #another way to see the mean number of calories in espresso drinks
+```
+
+---
+
+## Class activity and HW2
+
+- Review of Class 1 survey results (google doc output)
+- Go to Canvas or Github to download and open HW2 
+- Follow the instructions on the HW2 pdf and let's start exploring the *class1survey* data!
+
+***The below code is now for Part I of HW2!!!
+
+```{r, echo=TRUE, eval=FALSE, warning=FALSE}
+#Read the class1survey results, which were uploaded in github site as csv file
+#Need code file and output file for HW2 submission; PUT NAME ON FILE
+rm(list = ls())
+
+#1. Import class one survey data from our Github site (The dataset called 'Class 1 Survey Spring 2020.csv' is located in the class one folder), calling the R dataframe that you create C1survey
+C1survey <-
+ read.csv("https://raw.githubusercontent.com/kijohnson/ADA_Spring_2020/master/Class%201/Class%201%20Survey%20Spring%202020.csv")
+
+#2. Determine: a. the number of observations (i.e. the number of people who filled out the survey) and b. the number of variables in the dataframe.
+dim(C1survey) #outputs shows there are 43 observations (rows) and 27 variables (columns) in the dataframe
+
+#3. Generate and display a list of column names, calling your list varlist.
+varlist <- names(C1survey)
+#view the list to display in window and confirm list was generated 
+view(varlist)
+
+#4. Rename the column variables to something shorter and that is descriptive of what the variable is about and b. write code to display that they are renamed.
+names(C1survey)<-c("ID","Like Cats","Like Dogs","Desert Island","Life Slogan","Day of Week","Lark Owl Hum","Fav Food","Fav Drink","Fav Season","Fav Month","Hobby","Program","Specialization","Stat Soft","R Exp","Coding Comf","Length Coding","Learn","Interest","Fave#","BDay","BMonth","Country","State","City","Education")
+
+varlist2 <- names(C1survey)
+view(varlist2)
+
+#5. Write code to determine and display the number of factor, integer, numerical, and character variables there are in the C1survey dataset. 
+#First, scan full list for quick overview
+factors2 <- lapply(C1survey, class)
+view(factors2)
+
+#count number of numberic ----- answer: 4
+C1survey %>% select_if(is.numeric) %>%
+ncol()
+
+#Count number of integer (got same count as numeric) -----answer: 4
+C1survey %>% select_if(is.integer) %>%
+ncol() 
+
+#count number of factor ----- answer: 23
+C1survey %>% select_if(is.factor) %>%
+ncol() 
+
+#count number of character ----- answer: 0
+C1survey %>% select_if(is.character) %>%
+ncol() 
+
+##6. a. Using code, check the bday and bmonth variables for any unusual or missing values. If you find any, b. describe what you will do with the unusual values in a comment before or immediately following the code that does it, and c. after you have cleaned up any unusual values, find the median bday and month.
+C1survey%$%
+  summary(BDay)
+
+C1survey%$%
+  summary(BMonth)
+
+view(C1survey)
+#I will change any text values to numbers (e.g. twenty-eight=28)
+#First, I will change the class from "factor" to "character," so that I can recode the text values
+#Birth day
+C1survey$BDay <- as.character(C1survey$BDay)
+
+#Check Birth Day class to confirm the change
+class(C1survey$BDay)
+
+#Birth month
+C1survey$BMonth <- as.character(C1survey$BMonth)
+
+#Check Birth month class to confirm the change
+class(C1survey$BMonth)
+
+#Recode Birth day, so that all values have numbers, and no words or abbreviations
+C1survey2 <- C1survey %>%
+  mutate(BDay2=ifelse(BDay==" report 19", 19, ifelse(BDay=="7-Jun", 7, BDay))) 
+
+#Recode Birth month, so that all values have numbers, and no words or abbreviations
+C1survey3 <- C1survey2 %>%
+  mutate(BMonth2=ifelse(BMonth=="April", 4, ifelse(BMonth=="June 7-91", 6, ifelse(BMonth=="June", 6, ifelse(BMonth=="report 12", 12, BMonth)))))
+
+#Now, change both variables to numeric, so that I can find the median of each
+C1survey3$BDay2 <- as.numeric(C1survey3$BDay2)
+format(C1survey3$BDay2, digits = 2)
+
+C1survey3$BMonth2 <- as.numeric(C1survey3$BMonth2)
+format(C1survey3$BMonth2, digits = 2)
+
+#Check class again to confirm change
+class(C1survey3$BDay2)
+class(C1survey3$BMonth2)
+
+#Median bday
+median(C1survey3$BDay2, na.rm=TRUE) 
+
+#Median bmonth
+median(C1survey3$BMonth2, na.rm=TRUE) 
+
+#7. a. Create a new variable called bseason that gives the season according to Northern Meteorological season in which respondents were born (winter=12/1 to 2/29, spring=3/1 to 5/31, summer=6/1 to 8/31, fall=9/1 to 11/30). 
+
+#First, I will combine "BDay" and "BMonth" into one column called "Birthday"
+C1survey3$Birthday <- paste0(C1survey3$BMonth2, "/", C1survey3$BDay2)
+class(C1survey3$Birthday) #check class (is character)
+
+#Change "Birthday" from a character variable to a date variable 
+C1survey3 <- transform(C1survey3, Birthday = as.Date(as.character(Birthday), "%m/%d"))
+class(C1survey3$Birthday) #check class (is date)
+
+#Next, I will make a new variable called "bseason" using the Birthday variable
+C1survey4 <- C1survey3 %>%
+  mutate(bseason=ifelse(Birthday>='2020-12-01'|Birthday<'2020-02-29', "winter", ifelse(Birthday>='2020-03-01'& Birthday<='2020-05-31', "spring", ifelse(Birthday>='2020-06-01'& Birthday<='2020-08-31', "summer", "fall"))))
+
+view(C1survey4)
+
+#b. Using the table function, print a table of Seasons in the columns and bmonths in the rows that allows you to check that the coding is correct 
+C1survey4 %$%
+  table(BMonth2, bseason)
+
+#c. Sum the columns using the addmargins function to answer the question of how many classmates were born in each season? Include your answer in the code you turn in.
+A <- table(C1survey4$BMonth2, C1survey4$bseason)
+addmargins(A) #Fall=10, Spring=10, Summer=15, Winter=13
+
+#8. Pick your favorite variable to analyze, come up with a question you want to answer with that variable, generate the code, and provide an answer to your question. Describe what you did using comments (i.e. #'s).
+
+#Question: Is someone who is born in the summer more likely to choose summer as their favorite season? 
+
+#Code
+#bseason = IV and Fav Season = DV
+
+
+
+```

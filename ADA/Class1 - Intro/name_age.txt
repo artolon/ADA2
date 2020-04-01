@@ -1,0 +1,6 @@
+first name,age
+Arianne,26
+Elaine,28
+Tori,23
+Natalia,26
+Mikayla,27
