@@ -294,6 +294,11 @@ odds.n.ends(model_unadjust) #significant p-value for Disease; OR = 2.88, 95% CI 
 hoslem.test(data_cc$IDU, fitted(model_unadjust)) #Non-significant p-value, showing acceptable fit
 ```
 
+*Model prediction accuracy*
+- The accuracy of the above model is (0+4290)/5355=80.11%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)  
+- In otherwords, this model does very well at predicting non-cases (non injection drug users), but does extremely poorly at predicting cases (injection drug users)
+- This is perhaps unsurprising, as logistic regression does not work well as a classifier when the prevalence of the outcome is low. In this case, the prevalence is approximately 20%
+
 **Run the general linear model, with confounders included (adjusted model)**
 ```{r echo=TRUE}
 #Run the adjusted model (Include sex and race)
@@ -305,6 +310,9 @@ odds.n.ends(model_adjust) #All values are significant; Disease OR = 3.69, 95% CI
 #Run the Hosmer Lemeshow test to show Goodness of Fit
 hoslem.test(data_cc$IDU, fitted(model_adjust)) #nonsignificant hosmer lemeshow; accpetable fit
 ```
+*Model prediction accuracy*
+- The accuracy of the above model is (153+4163)/5355=80.60%. It predicts most 0's correctly (97.04% correct) and most 1's incorrect (14.37% correct)
+- This model is slightly better than the previous model. However, we still want to try to improve
 
 **Check for Influential Observations**
 ```{r echo=TRUE}
@@ -356,12 +364,72 @@ lmtest::lrtest(model_unadjust2, model_adjust2) #The adjusted model accounts for 
 anova(model_unadjust2, model_adjust2,test="Chisq") #adjusted model is statistically significantly better
 ```
 
-### Look further at the validity of the model
+### See if the model improves after balancing the data set
+
+Because the proportion of cases are low, we are going to balance the data set to see if this allows us to better predict 0s vs. 1s
 
 ```{r}
+#First remove the influential observations from the full data set
+data_remove_influence = data_cc[-c(393,425,486,576,587,641,705,737,802,1049,1274,1394,1465,1488,1494,1547,1580,1677,1706,1739,1741,1762,1781,1793,1818,1822,1866,1880,1881,1923,1925),]
 
+#Next, create a data set that only has cases (IDU=1)
+data_one<-data_remove_influence[which(data_remove_influence$IDU==1),] #1057 observations
+
+#Next create a data set that only has non cases (IDU=0)
+#set the seed so that we always get the same results
+set.seed(1)
+data_zero<-sample_n(data_remove_influence[which(data_remove_influence$IDU==0),], size=1057,) #1057 observations 
+
+#Now, combine the two newly created data sets into 1, so that the sample is balanced 
+data_balance<- rbind(data_zero,data_one) #Combine these datasets by row 
+#We now have 2114 observations, which makes sense! 
 ```
 
+### Run model with new data set
+
+```{r}
+#Logistic regression model with a balanced data set
+model_balance <-  glm(IDU ~ Disease + Sex + Black, data=data_balance, family="binomial")
+odds.n.ends(model_balance)
+```
+
+Interestingly, this model drastically changes the sensitivity and specificity. Overall we get (905+489/2114 = 65.94%) correct. This means that this model (overall) does more poorly than the unbalanced model (overall). However, the sensitivity drastically improved (while also lowering specificity quite a bit). This means we correctly predict our cases 85.62% of the time, but we predict our non-cases only 46.26% of the time. 
+
+### Compute ROC curve to get AUC
+
+**Receiver Operating Characteristic Curve (ROC curve)**
+```{r}
+#First, compute the predicted probabilties from the model and actual values of IDU from the balanced data set that was created above
+predict <- predict(model_balance, newdata=data_balance, type = "response")
+
+#Create terms for both ROC and performance 
+ROC=prediction(as.numeric(predict), as.numeric(data_balance$IDU)) 
+p=performance(ROC,"tpr", "fpr")
+
+#Plot the results
+plot(p, colorsize=T, color="red", print.cutoffs.at=seq(0,1,0.2))
+abline(a=0, b= 1)
+
+#Get the threshold for where we have highest sensitivity and specificity 
+#Look visually at where threshold would be
+thresh <- performance(ROC, "sens", "spec")
+plot(thresh)
+
+#See value for threshold 
+threshval<-thresh@alpha.values[[1]][which.max(thresh@x.values[[1]]+thresh@y.values[[1]])]
+threshval #value is 0.52
+```
+
+**Area Under the Curve (AUC)**
+```{r}
+#Calculate the AUC
+auc = performance(ROC, measure = "auc")
+auc@y.values
+
+#Value is 0.736
+```
+
+The value of the AUC is approximately 0.736, indicating that the balanced model does okay at predicting people who have used injection drugs. 
 
 ### Interpretation and conclusions (Discussion)
 
