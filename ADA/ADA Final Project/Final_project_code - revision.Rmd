@@ -1,0 +1,458 @@
+---
+title: "ADA Final Project"
+author: "Abbie Tolon"
+date: "March 31, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Set-up
+
+First, I installed all of the necessary packages and loaded them to my library. Next, I retrieved the csv file from my github repository. The data set contained 6982 total observations and 21 different variables. 
+
+```{r echo=TRUE, results='hide'}
+##installing/loading the latest installr package:
+     #install.packages("installr"); library(installr) 
+
+##Update version of R
+     #updateR() #updating R.
+
+##Clear the global environment 
+     #remove(list = ls())
+
+##Install packages to be used for this analysis
+     #install.packages(c("tidyverse", "ResourceSelection", "odds.n.ends", "lmtest", "car", "pacman"))
+
+#Load all necessary packages
+pacman::p_load(tidyverse, ResourceSelection, odds.n.ends, lmtest, car, ROCR)
+
+#tidyverse = For various packages
+#ResourceSelection = For Hosmer Lemeshow test
+#odds.n.ends = For CIs, ORs, and sensitivity/specificity
+#lmtest = For testing and comparing linear regression models
+#car = For compareCoefs function
+#ROCR = For running the ROC code 
+
+#Retrieve Data from Github -----------------------------------------------------------------------------
+#Link for full sample
+data <-read.csv("https://raw.githubusercontent.com/artolon/ADA2/master/ADA/ADA%20Final%20Project/ADA_Final_Key_Variables.csv") #6982 obs and 21 vars
+```
+
+### Data Cleaning
+
+**Study population** 	
+The study will include all incarcerated adults, above the age of 18 in the data set
+
+**Variables  of Interest**
+I will use the following variables in my analysis:  
+* *Dependent variable:* Have a disease (yes/no), which will be aggregated from...TB test result (positive/negative); result of last HIV test (positive/negative); result of AIDS test (positive/negative); still have hepatitis (yes/no); still have STD (yes/no)
+* *Independent variable:* Ever injected drugs (yes/no) 
+* *Confounding variables:* Sex, Race (dichotomized in data set to be black vs. not black), Age
+
+```{r echo=TRUE, results='hide'}
+#Filter the data set to only inlcude people 18 and older 
+data <- data[data$Age > 17,]
+data #after filtering, there are now 6601 observations and 21 variables
+
+#Get names of the data
+names(data)
+
+#Select only the columns that we want to work with
+data <- select(data, c(Age,V4...Sex,V44...Black.1,V1794...Ever.injected.Drugs,V1899...TB.Test.result,V1911...Result.of.last.HIV.test,V1913...Result.of.AIDS.test,V1994...Still.have.hepatitus,V1997...Still.have.STD))
+
+#View Updated Data
+view(data)
+
+#Change colunm names to be easier to read
+names(data) <- c("Age", "Sex", "Black", "IDU", "TB", "HIV", "AIDS", "Hep", "STD")
+view(data)
+
+#Check class of Age variable
+class(data$Age) #is integer 
+
+#Recode all variables so that there are only 1s and 0s, rather than 1s and 2s
+#For sex variable -> 1=Male, 0=Female
+#For race variable -> 1=Black, 0=Non-black
+#For TB, HIV, and AIDS variables -> 1=positive test result, 0=negative test result
+#For IDU, Hep and STD variables -> 1=Yes, 0=No
+data <- data %>%
+  mutate(Sex=ifelse(Sex==1,1, ifelse(Sex==2,0,NA)),
+         Black=ifelse(Black==1,1, ifelse(Black==2,0,NA)),
+         IDU=ifelse(IDU==1,1, ifelse(IDU==2,0,NA)),
+         TB=ifelse(TB==1,1, ifelse(TB==2,0,NA)),
+         HIV=ifelse(HIV==1,1, ifelse(HIV==2,0,NA)),
+         AIDS=ifelse(AIDS==1,1, ifelse(AIDS==2,0,NA)),
+         Hep=ifelse(Hep==1,1, ifelse(Hep==2,0,NA)),
+         STD=ifelse(STD==1,1, ifelse(STD==2,0,NA)))
+```
+
+### Inspecting Variables
+
+**Demographic Variables** - *Age, Race (Black/Not Black), Sex (male/female)*
+```{r echo=TRUE, results='hide'}
+#AGE------------------------------------------------------------------------------------
+#Find the median, min, and max age
+quantile(data$Age, na.rm = TRUE) #median=31; min=18; max=82
+
+#Find avaerage age 
+mean(data$Age, na.rm = TRUE) #average age = 32
+
+#count missing variables 
+sum(is.na(data$Age)) #only 3 values are missing 
+
+#create a new variable that recodes age into a categorical variable 
+data <- data %>%
+  mutate(AgeCat=ifelse(Age>17 & Age<=34, 1, ifelse(
+    Age>34 & Age <=50, 2, ifelse(Age>50 & Age<=99, 3, NA))))
+
+#check new variable
+table(data$AgeCat, data$Age) #table looks good!
+
+#Check class of new AgeCat variable
+class(data$AgeCat) #is numeric
+sum(is.na(data$AgeCat)) #3 missing; 6598 observations
+
+#Look at the breakdown for Age cat
+sum(data$AgeCat == 1, na.rm = TRUE) #3968 people between 18 and 34
+sum(data$AgeCat == 2, na.rm = TRUE) #2366 people between 35 and 50
+sum(data$AgeCat == 3, na.rm = TRUE) #264 people are older than 50
+
+(3968/6598)*100 #60.14% people between 18 and 34
+(2366/6598)*100 #35.86% people between 35 and 50
+(264/6598)*100 #4.00% people are older than 50
+
+#Change to a factor variable
+data$AgeCat <- as.factor(data$AgeCat)
+class(data$AgeCat)
+
+
+
+#RACE-------------------------------------------------------------------------------------
+#Check class of race variable
+class(data$Black) #is numeric
+sum(is.na(data$Black)) #3 missing; 6598 observations
+
+#Identify the number of people in the sample who identify as Black
+sum(data$Black==1, na.rm = TRUE) #2770 people identify as Black
+
+(2770/6598)*100 #41.98 identified as "Black"
+100-((2770/6598)*100) #58.02 identified as "Nonblack"
+
+
+
+#SEX--------------------------------------------------------------------------------------
+#Check class of sex variable
+class(data$Sex) #is numeric
+sum(is.na(data$Sex)) #3 missing; 6598 observations
+
+#Identify the number of people in the sample who are male
+sum(data$Sex==1, na.rm = TRUE) #4635 are male
+
+(4635/6598)*100 #70.25 identified as male
+100-((4635/6598)*100) #29.75 identified as female
+```
+
+**Dependent Variable** - *Aggregated from...TB test result (positive/negative); HIV test result (positive/negative); AIDS test results (positive/negative); have hepatitis (yes/no); have STD (yes/no)*
+```{r echo=TRUE, results='hide'}
+#TB--------------------------------------------------------------------------------------
+#Check class of TB variable
+class(data$TB) #is numeric
+sum(is.na(data$TB)) #2755 missing; 3846 observations
+
+#Identify the number of people in the sample who have tested positive for TB
+sum(data$TB==1, na.rm = TRUE) #113 tested positive for TB
+
+(113/3846)*100 #2.94% have tested positive for TB
+100-((113/3846)*100) #97.06% have tested positive for TB
+
+
+
+#HIV--------------------------------------------------------------------------------------
+#Check class of HIV variable
+class(data$HIV) #is numeric
+sum(is.na(data$HIV)) #5495 missing; 1106 observations
+
+#Identify the number of people in the sample who have tested positive for HIV
+sum(data$HIV==1, na.rm = TRUE) #37 have tested positive for HIV
+
+(37/1106)*100 #3.35% have tested positive for HIV
+100-((37/1006)*100) #96.32% have tested positive for HIV
+
+
+
+#AIDS--------------------------------------------------------------------------------------
+#Check class of AIDS variable
+class(data$AIDS) #is numeric
+sum(is.na(data$AIDS)) #3633 missing; 2968 observations
+
+#Identify the number of people in the sample who have tested positive for AIDS
+sum(data$AIDS==1, na.rm = TRUE) #32 have tested positive for AIDS
+
+(32/2968)*100 #1.08% have tested positive for AIDS
+100-((32/2968)*100) #98.92% have tested positive for AIDS
+
+
+
+#Hep--------------------------------------------------------------------------------------
+#Check class of Hepatitis variable
+class(data$Hep) #is numeric
+sum(is.na(data$Hep)) #115 missing; 6486 observations
+
+#Identify the number of people in the sample who have had hepatitis
+sum(data$Hep==1, na.rm = TRUE) #412 have had hepatitis
+
+(412/6486)*100 #6.35% have had hepatits
+100-((412/6486)*100) #93.65% have had hepatitis
+
+
+
+#STD--------------------------------------------------------------------------------------
+#Check class of STD variable
+class(data$STD) #is numeric
+sum(is.na(data$STD)) #112 missing; 6489 observations
+
+#Identify the number of people in the sample who have had a STD
+sum(data$STD==1, na.rm = TRUE) #873 have had a STD
+
+(873/6489)*100 #13.45% have had a STD
+100-((873/6489)*100) #86.55% have had a STD
+```
+
+Combine all of the disease variables above into one aggregated dichotomous variable (Infectious Disease yes/no)
+
+```{r echo=TRUE, results='hide'}
+data <- data %>%
+  mutate(Disease = ifelse(TB==1|HIV==1|AIDS==1|Hep==1|STD==1, 1, 0))
+
+#Zeros did not recode properly; fix here
+data$Disease[is.na(data$Disease)] <- 0
+
+#See how many had one of the diseases
+sum(data$Disease==1, na.rm = TRUE) #399 have either TB, HIV, Hepatitis, or a STD
+
+(399/6601)*100 #6.04% have had TB, HIV, Hepatitis, or a STD
+100-((399/6601)*100) #93.96% don't have TB, HIV, Hepatitis, or a STD
+```
+
+**Indpendent Variable** -	*Ever injected drugs (yes/no)*
+```{r echo=TRUE, results='hide'}
+#Check class of IDU variable
+class(data$IDU) #is numeric
+sum(is.na(data$IDU)) #1246 missing; 5355 observations
+
+#Identify the number of people in the sample who have injected drugs
+sum(data$IDU==1, na.rm = TRUE) #1065 have injected drugs
+
+(1065/5355)*100 #19.89% have injected drugs before
+100-((1065/5355)*100) #80.11% have never injected drugs
+```
+
+### Data Analysis
+
+Creating a data set with complete cases for further analysis
+
+**Complete Cases**
+```{r echo=TRUE}
+#drop all NAs from data set before running analysis
+data_cc <- data %>%
+  select(Age, Sex, Black, IDU, Disease, AgeCat) %>%
+  drop_na()
+
+#summarizing the data
+summary(data_cc) #5355 observations and 6 variables 
+
+#Summary of complete cases disease prevalence; The full sample had a prevalence of 6.04% and the complete cases sample had a prevalence of 6.72%
+sum(data_cc$Disease==1, na.rm = TRUE) 
+(360/5355)
+```
+
+**Assumptions for Logistic Regression**  
+- Dependent variable is dichotomous (Have disease? yes/no)  
+- There are multiple independent variables, and they all vary  
+- There is independence of observations (individual survey respondents)  
+- All categories for dichotomous dependent and independent variables are exhaustive and mutually exclusive  
+- There are more than 50 cases per independent variable  
+- There is no multicollinearity (see below)  
+- All overly influential values were removed (see below)
+
+**Check Linearity Assumption for Age Variable**
+```{r echo=TRUE}
+#Check for linearity of age variable with the box tidwell technique
+
+#linearity
+logAge <- data_cc$Age*log(data_cc$Age)#create term to test linearity
+
+#Box Tidwell to test assumption of linearity 
+BoxTid_age <- glm(IDU ~ Age + logAge, data=data_cc, family="binomial") 
+summary(BoxTid_age) #The term for linearity IS significant; therefore we violate the assumption and will not include age in the model as a numberic variable; should use "AgeCat" instead.
+```
+
+**Run the general linear model, without confounders included (unadjusted model)**
+```{r echo=TRUE}
+#Run the unadjusted model with IDU as predictor 
+model_unadjust <- glm(Disease ~ IDU, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_unadjust) #IDU OR = 5.60, 95% CI (4.50, 6.99)
+
+#Model is statistically significant (Chi-square(1) = 226.26, p<0.0001)
+```
+
+*Model prediction accuracy*
+- The accuracy of the above model is (0+4995)/5355=93.63%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)  
+- In other words, this model does very well at predicting non-cases (people with no disease), but does extremely poorly at predicting cases (people with disease)
+- This is perhaps unsurprising, as logistic regression does not work well as a classifier when the prevalence of the outcome is low. In this case, the prevalence is approximately 6%
+
+**Run the general linear model, with confounders included (adjusted model)**
+```{r echo=TRUE}
+#Run the adjusted model (Include sex and race)
+model_adjust <- glm(Disease ~ IDU + Sex + Black + AgeCat, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_adjust) #All values are significant; IDU OR = 5.26, 95% CI (4.14, 6.71)
+
+#Model is statistically significant (Chi-square(5) = 295.46, p<0.0001)
+```
+
+*Model prediction accuracy*
+- The accuracy of the above model is also (0+4995)/5355=93.63%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)
+- This model seems to not do any better than the unadjusted model. However, there are still ways we can compare and potentially improve model fit. 
+
+**Check for Influential Observations**
+```{r echo=TRUE}
+#Cook's D plot
+plot(model_adjust, which=4, id.n=5, col="red", cex.id=0.60)
+
+#There are 3 observations deemed influential: 1918, 6414, 6475, and 6480
+```
+```{r echo=TRUE, results='hide'}
+#identify observations with a Cook's D greater than 0.008 
+y<-as.data.frame(cooks.distance(model_adjust))
+colnames(y)[1]<-"CD"
+y$obs_no<-rownames(y)
+z<-y[which(y$CD>0.008),]
+z$obs_no
+
+#The following observations are influential:
+#1918, 6414, 6475, and 6480
+
+#Remove the influential observations from adjusted model
+model_adjust2 <- update(model_adjust,subset=c(-1918,-6414,-6475,-6480))
+
+#compare coefficients between models with and without influential observations
+compareCoefs(model_adjust, model_adjust2) #removing the observations hardly made a difference on the coefficients. Therefore, we will keep the observations as-is 
+```
+
+**Check Multicollinearity**
+```{r echo=TRUE}
+#Variance Inflation Factors
+vif(model_adjust)
+
+#The VIF for each variable is less than 2.0, so we are not concerned with multicollinearity 
+```
+
+**Check the log likelihood between the adjusted and unadjusted models**
+Use log likelihood to see how much unexplained information there is after the model has been fitted. The further a predicted value is from the actual value, the more an observation contributes to the LL
+```{r echo=TRUE}
+#Log Likelihood for full models
+logLik(model_unadjust) #LL = -1206.38
+logLik(model_adjust) #LL = -1171.77
+#The adjusted model is slightly better
+
+#compare models using LR test
+lmtest::lrtest(model_unadjust, model_adjust) #The adjusted model accounts for more of the variation and is statistically significantly better than the unadjusted model 
+
+anova(model_unadjust, model_adjust,test="Chisq") #adjusted model is statistically significantly better
+```
+
+### See if the model improves after balancing the data set
+
+Because the proportion of cases are so low, we are going to balance the data set to see if this allows us to better predict 0s vs. 1s
+
+```{r}
+#First, create a data set that only has cases (Disease=1)
+data_one<-data_cc[which(data_cc$Disease==1),] #360 observations
+
+#Next create a data set that only has non cases (Disease=0)
+#set the seed so that we always get the same results
+set.seed(1)
+data_zero<-sample_n(data_cc[which(data_cc$Disease==0),], size=360,) #360 observations 
+
+#Now, combine the two newly created data sets into 1, so that the sample is balanced 
+data_balance<- rbind(data_zero,data_one) #Combine these datasets by row 
+#We now have 720 observations, which makes sense! 
+```
+
+### Run model with new data set
+
+```{r}
+#Logistic regression model with a balanced data set
+model_balance <-  glm(Disease ~ IDU + Sex + Black + AgeCat, data=data_balance, family="binomial")
+odds.n.ends(model_balance)
+
+(214+268)/720
+```
+
+Interestingly, this model drastically changes the sensitivity and specificity. Overall we get (214+268)/720 = 66.94% correct. This means that this model (overall) does more poorly than the unbalanced model. However, the sensitivity drastically improved (while also lowering specificity a little bit). This means we correctly predict our cases 59.44% of the time, but we predict our non-cases only 66.94% of the time. 
+
+### Compute ROC curve to get AUC
+
+**Receiver Operating Characteristic Curve (ROC curve)**
+```{r}
+#First, compute the predicted probabilties from the model and actual values of Disease from the balanced data set that was created above
+predict <- predict(model_balance, newdata=data_balance, type = "response")
+
+#Create terms for both ROC and performance 
+ROC=prediction(as.numeric(predict), as.numeric(data_balance$Disease)) 
+p=performance(ROC,"tpr", "fpr")
+
+#Plot the results
+plot(p, colorsize=T, color="red", print.cutoffs.at=seq(0,1,0.2))
+abline(a=0, b= 1)
+
+#Get the threshold for where we have highest sensitivity and specificity 
+#Look visually at where threshold would be
+thresh <- performance(ROC, "sens", "spec")
+plot(thresh)
+
+#See value for threshold 
+threshval<-thresh@alpha.values[[1]][which.max(thresh@x.values[[1]]+thresh@y.values[[1]])]
+threshval #value is 0.55
+```
+
+**Area Under the Curve (AUC)**
+```{r}
+#Calculate the AUC
+auc = performance(ROC, measure = "auc")
+auc@y.values
+
+#Value is 0.72
+```
+
+The value of the AUC is approximately 0.72, indicating that the balanced model does okay (but not great) at predicting people who have a disease, based on past injection drug use. This means, there is approximately a 72% chance that the balanced model will be able to distinguish between those who have disease (positive cases) and those who do not have disease (negative cases).
+
+### Interpretation and conclusions (Discussion)
+
+
+
+### Package Citations
+
+Create citations for R, R Studio, and all packages used
+```{r echo=TRUE}
+#Citation for R
+citation()
+
+#Citation for R Studio
+RStudio.Version()
+
+#For packages
+citation(package = "tidyverse")
+citation(package = "ResourceSelection")
+citation(package = "odds.n.ends")
+citation(package = "lmtest")
+citation(package = "car")
+```
+
