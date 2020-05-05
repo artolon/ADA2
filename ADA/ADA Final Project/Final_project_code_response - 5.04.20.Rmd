@@ -1,0 +1,568 @@
+---
+title: "ADA Final Project"
+author: "Abbie Tolon"
+date: "March 31, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Set-up
+
+First, I installed all of the necessary packages and loaded them to my library. Next, I retrieved the csv file from my github repository. The data set contained 6982 total observations and 21 different variables. 
+
+```{r echo=TRUE, results='hide'}
+##installing/loading the latest installr package:
+     #install.packages("installr"); library(installr) 
+
+##Update version of R
+     #updateR() #updating R.
+
+##Clear the global environment 
+     #remove(list = ls())
+
+##Install packages to be used for this analysis
+     #install.packages(c("tidyverse", "ResourceSelection", "odds.n.ends", "lmtest", "car", "pacman"))
+
+#Load all necessary packages
+pacman::p_load(tidyverse, odds.n.ends, lmtest, car, ROCR)
+
+#tidyverse = For various packages
+#odds.n.ends = For CIs, ORs, and sensitivity/specificity
+#lmtest = For testing and comparing linear regression models
+#car = For compareCoefs function
+#ROCR = For running the ROC code 
+
+#Retrieve Data from Github -----------------------------------------------------------------------------
+#Link for full sample
+data <-read.csv("https://raw.githubusercontent.com/artolon/ADA2/master/ADA/ADA%20Final%20Project/ADA_Final_Key_Variables.csv") #6982 obs and 21 vars
+```
+
+### Data Cleaning
+
+**Study population** 	
+The study will include all incarcerated adults, above the age of 18 in the data set
+
+**Variables of Interest**  
+I will use the following variables in my analysis:  
+  * *Dependent variables:* Have a disease (yes/no), which will be aggregated from...TB test result (positive/negative); result of last HIV test (positive/negative); result of AIDS test (positive/negative); still have hepatitis (yes/no); still have STD (yes/no)  
+  * *Independent variable:* Ever injected drugs (yes/no)  
+  * *Confounding variables:* Sex, Race (dichotomized in data set to be black vs. not black), Age
+
+```{r echo=TRUE, results='hide'}
+#Filter the data set to only inlcude people 18 and older 
+data <- data[data$Age > 17,]
+data #after filtering, there are now 6601 observations and 21 variables
+
+#Get names of the data
+names(data)
+
+#Select only the columns that we want to work with
+data <- select(data, c(Age,V4...Sex,V44...Black.1,V1794...Ever.injected.Drugs,V1899...TB.Test.result,V1911...Result.of.last.HIV.test,V1913...Result.of.AIDS.test,V1994...Still.have.hepatitus,V1997...Still.have.STD))
+
+#View Updated Data
+view(data)
+
+#Change colunm names to be easier to read
+names(data) <- c("Age", "Sex", "Black", "IDU", "TB", "HIV", "AIDS", "Hep", "STD")
+view(data)
+
+#Check class of Age variable
+class(data$Age) #is integer 
+
+#Recode all variables so that there are only 1s and 0s, rather than 1s and 2s
+#For sex variable -> 1=Male, 0=Female
+#For race variable -> 1=Black, 0=Non-black
+#For TB, HIV, and AIDS variables -> 1=positive test result, 0=negative test result
+#For IDU, Hep and STD variables -> 1=Yes, 0=No
+data <- data %>%
+  mutate(Sex=ifelse(Sex==1,1, ifelse(Sex==2,0,NA)),
+         Black=ifelse(Black==1,1, ifelse(Black==2,0,NA)),
+         IDU=ifelse(IDU==1,1, ifelse(IDU==2,0,NA)),
+         TB=ifelse(TB==1,1, ifelse(TB==2,0,NA)),
+         HIV=ifelse(HIV==1,1, ifelse(HIV==2,0,NA)),
+         AIDS=ifelse(AIDS==1,1, ifelse(AIDS==2,0,NA)),
+         Hep=ifelse(Hep==1,1, ifelse(Hep==2,0,NA)),
+         STD=ifelse(STD==1,1, ifelse(STD==2,0,NA)))
+```
+
+### Inspecting Variables
+
+**Demographic Variables** - *Age, Race (Black/Not Black), Sex (male/female)*
+```{r echo=TRUE, results='hide'}
+#AGE------------------------------------------------------------------------------------
+#Find the median, min, and max age
+quantile(data$Age, na.rm = TRUE) #median=31; min=18; max=82
+
+#Find avaerage age 
+mean(data$Age, na.rm = TRUE) #average age = 32
+
+#count missing variables 
+sum(is.na(data$Age)) #only 3 values are missing for age
+
+#create a new variable that recodes age into a categorical variable 
+data <- data %>%
+  mutate(AgeCat=ifelse(Age>17 & Age<=34, 1, ifelse(
+    Age>34 & Age <=50, 2, ifelse(Age>50 & Age<=99, 3, NA))))
+
+#check new variable
+table(data$AgeCat, data$Age) #table looks good!
+
+#Check class of new AgeCat variable
+class(data$AgeCat) #is numeric
+sum(is.na(data$AgeCat)) #3 missing; 6598 observations
+
+#Look at the breakdown for Age cat
+sum(data$AgeCat == 1, na.rm = TRUE) #3968 people between 18 and 34
+sum(data$AgeCat == 2, na.rm = TRUE) #2366 people between 35 and 50
+sum(data$AgeCat == 3, na.rm = TRUE) #264 people are older than 50
+
+(3968/6598)*100 #60.14% people between 18 and 34
+(2366/6598)*100 #35.86% people between 35 and 50
+(264/6598)*100 #4.00% people are older than 50
+
+#Change to a factor variable
+data$AgeCat <- as.factor(data$AgeCat)
+class(data$AgeCat)
+
+
+
+#RACE-------------------------------------------------------------------------------------
+#Check class of race variable
+class(data$Black) #is numeric
+sum(is.na(data$Black)) #3 missing; 6598 observations
+
+#Identify the number of people in the sample who identify as Black
+sum(data$Black==1, na.rm = TRUE) #2770 people identify as Black
+
+(2770/6598)*100 #41.98 identified as "Black"
+100-((2770/6598)*100) #58.02 identified as "Nonblack"
+
+
+
+#SEX--------------------------------------------------------------------------------------
+#Check class of sex variable
+class(data$Sex) #is numeric
+sum(is.na(data$Sex)) #3 missing; 6598 observations
+
+#Identify the number of people in the sample who are male
+sum(data$Sex==1, na.rm = TRUE) #4635 are male
+
+(4635/6598)*100 #70.25 identified as male
+100-((4635/6598)*100) #29.75 identified as female
+```
+
+**Dependent Variable** - *Aggregated from...TB test result (positive/negative); HIV test result (positive/negative); AIDS test results (positive/negative); have hepatitis (yes/no); have STD (yes/no)*
+```{r echo=TRUE, results='hide'}
+#TB--------------------------------------------------------------------------------------
+#Identify the number of people in the sample who tested positive for TB
+sum(data$TB==1, na.rm = TRUE) #113 tested positive for TB
+
+(113/6601)*100 #1.71% have tested positive for TB
+100-((113/6601)*100) #98.29% have not tested positive for TB
+
+
+
+#HIV--------------------------------------------------------------------------------------
+#Identify the number of people in the sample who have tested positive for HIV
+sum(data$HIV==1, na.rm = TRUE) #37 have tested positive for HIV
+
+(37/6601)*100 #0.56% have tested positive for HIV
+100-((37/6601)*100) #99.44% have not tested positive for HIV
+
+
+
+#AIDS--------------------------------------------------------------------------------------
+#Identify the number of people in the sample who have tested positive for AIDS
+sum(data$AIDS==1, na.rm = TRUE) #32 have tested positive for AIDS
+
+(32/6601)*100 #0.48% have tested positive for AIDS
+100-((32/6601)*100) #99.52% have not tested positive for AIDS
+
+
+
+#Hep--------------------------------------------------------------------------------------
+#Identify the number of people in the sample who have hepatitis
+sum(data$Hep==1, na.rm = TRUE) #202 have hepatitis
+
+(202/6601)*100 #3.06% have hepatits
+100-((202/6601)*100) #96.94% do not have hepatitis
+
+
+
+#STD--------------------------------------------------------------------------------------
+#Identify the number of people in the sample who have a STD
+sum(data$STD==1, na.rm = TRUE) #73 have a STD
+
+(73/6601)*100 #1.11% have a STD
+100-((73/6601)*100) #98.89% do not have a STD
+```
+
+### Code for Response to Reviewers
+
+Grouping different disease variables to create multiple models, which display the relationship between injection drug use and infectious disease. 
+
+The following categories will be used:  
+- HIV + AIDS + STDS = STD  
+- TB = TB  
+- Hep = Hep
+
+To do this, I need to create a new variable for STD, which groups HIV, AIDS, and STD all together
+
+**Create New STD Variable**
+
+```{r echo=TRUE, results='hide'}
+#Create new STD variable called "STD2"
+data <- data %>%
+  mutate(STD2 = ifelse(HIV==1|AIDS==1|STD==1, 1, 0))
+
+#View the results
+view(data)
+
+#See how many have a STD (including HIV/AIDS)
+#Identify the number of people in the sample who have a STD
+sum(data$STD2==1, na.rm = TRUE) #128 have a STD
+
+(128/6601)*100 #1.94% have a STD
+100-((128/6601)*100) #98.06% do not have a STD
+
+```
+
+**Independent Variable** -	*Ever injected drugs (yes/no)*
+```{r echo=TRUE, results='hide'}
+#Identify the number of people in the sample who have injected drugs
+sum(data$IDU==1, na.rm = TRUE) #1065 have injected drugs
+
+(1065/6601)*100 #16.13% have injected drugs before
+100-((1065/6601)*100) #83.87% have never injected drugs
+```
+
+### Data Analysis
+
+#### STD and IDU
+
+Creating a data set with complete cases for further analysis
+
+**Complete Cases**
+```{r echo=TRUE}
+#Fix NAs for different variables and code to 0
+data$STD2[is.na(data$STD2)] <- 0
+data$TB[is.na(data$TB)] <- 0
+data$Hep[is.na(data$Hep)] <- 0
+
+
+#drop all NAs from data set before running analysis
+data_cc <- data %>%
+  select(Sex, Black, IDU, STD2, TB, Hep, AgeCat) %>%
+  drop_na()
+
+#summarizing the data
+summary(data_cc) #5355 observations and 7 variables 
+
+#Look at prevalence for each variable with the complete case set 
+sum(data_cc$STD2==1, na.rm = TRUE) 
+(121/5355) #2.26% had a STD at the time of incarceration 
+
+sum(data_cc$TB==1, na.rm = TRUE) 
+(89/5355) #1.66% had TB at the time of incarceration 
+
+sum(data_cc$Hep==1, na.rm = TRUE) 
+(192/5355) #3.59% had a hepatitis at the time of incarceration 
+
+#Summary of complete case IDU prevalence;
+sum(data_cc$IDU==1, na.rm = TRUE)
+(1065/5355) #19.89% have used injection drugs before
+```
+
+**Assumptions for Logistic Regression**  
+- Dependent variables are dichotomous (Have disease? yes/no)  
+- There are multiple independent variables, and they all vary  
+- There is independence of observations (individual survey respondents)  
+- All categories for dichotomous dependent and independent variables are exhaustive and mutually exclusive  
+- There are more than 50 cases per independent variable  
+- All overly influential values were removed, if necessary (see below)
+
+**Run the general linear model for STD, without confounders included (unadjusted model)**
+```{r echo=TRUE}
+#Run the unadjusted model with IDU as predictor and STD as outcome
+model_unadjuststd <- glm(STD2 ~ IDU, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_unadjuststd) #IDU OR = 2.45, 95% CI (1.67, 3.54)
+
+summary(model_unadjuststd) #To see p-values
+
+#Model is statistically significant (Chi-square(1) = 19.88, p<0.0001)
+```
+
+*Model prediction accuracy*
+  - The accuracy of the above model is (0+5234)/5355=97.74%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)  
+  - In other words, this model does very well at predicting non-cases (people with no STD), but does extremely poorly at predicting cases (people with a STD)
+  - This is perhaps unsurprising, as logistic regression does not work well as a classifier when the prevalence of the outcome is low. In this case, the prevalence is approximately 2.26%
+
+**Run the general linear model for STD, with confounders included (adjusted model)**
+```{r echo=TRUE}
+#Run the adjusted model for STD as outcome (Include sex, race, and age)
+model_adjuststd <- glm(STD2 ~ IDU + Sex + Black + AgeCat, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_adjuststd) #All values are significant; IDU OR = 2.42, 95% CI (1.60, 3.63)
+
+summary(model_adjuststd) #To see p-values
+
+#Model is statistically significant (Chi-square(5) = 44.01, p<0.0001)
+```
+
+*Model prediction accuracy*
+  - The accuracy of the above model is (0+5234)/5355=97.74%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)  
+  - In other words, this model does very well at predicting non-cases (people with no STD), but does extremely poorly at predicting cases (people with a STD)
+- This model seems to not do much better at predicting cases than the unadjusted model. 
+
+**Check for Influential Observations**
+```{r echo=TRUE}
+#Cook's D plot
+plot(model_adjuststd, which=4, id.n=5, col="red", cex.id=0.60)
+```
+```{r echo=TRUE, results='hide'}
+#identify observations with a Cook's D greater than 0.008 
+y<-as.data.frame(cooks.distance(model_adjuststd))
+colnames(y)[1]<-"CD"
+y$obs_no<-rownames(y)
+z<-y[which(y$CD>0.02),]
+z$obs_no
+
+#The following observations are influential:
+#"6413" "6414" "6484" "6497" "6514"
+
+#Remove the influential observations from adjusted model
+model_adjuststd2 <- update(model_adjuststd,subset=c(-6413,-6414,-6484,-6497, -6514))
+
+#compare coefficients between models with and without influential observations
+compareCoefs(model_adjuststd, model_adjuststd2) #removing the observations hardly made a difference on the coefficients. Therefore, we will keep the observations as-is 
+```
+
+**Check Multicollinearity**
+```{r echo=TRUE}
+#Variance Inflation Factors
+vif(model_adjuststd)
+
+#The VIF for each variable is less than 2.0, so we are not concerned with multicollinearity 
+```
+
+**Check the log likelihood between the adjusted and unadjusted models**
+Use log likelihood to see how much unexplained information there is after the model has been fitted. The further a predicted value is from the actual value, the more an observation contributes to the LL
+```{r echo=TRUE}
+#Log Likelihood for full models
+logLik(model_unadjuststd) #LL = -568.27
+logLik(model_adjuststd) #LL = -556.20
+#The adjusted model is slightly better
+
+#compare models using LR test
+lmtest::lrtest(model_unadjuststd, model_adjuststd) #The adjusted model accounts for more of the variation and is statistically significantly better than the unadjusted model 
+
+anova(model_unadjuststd, model_adjuststd,test="Chisq") #adjusted model is statistically significantly better
+```
+
+#### TB and IDU
+
+**Run the general linear model for TB, without confounders included (unadjusted model)**
+```{r echo=TRUE}
+#Run the unadjusted model with IDU as predictor and TB as outcome
+model_unadjustTB <- glm(TB ~ IDU, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_unadjustTB) #IDU OR = 1.87, 95% CI (1.17, 2.91)
+
+summary(model_unadjustTB) #To see p-values
+
+#Model is statistically significant (Chi-square(1) = 6.78, p<0.0001)
+```
+
+*Model prediction accuracy*
+  - The accuracy of the above model is (0+5266)/5355=98.34%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)  
+  - In other words, this model does very well at predicting non-cases (people with no TB), but does extremely poorly at predicting cases (people with TB)
+  - This is perhaps unsurprising, as logistic regression does not work well as a classifier when the prevalence of the outcome is low. In this case, the prevalence is approximately 1.67%
+
+**Run the general linear model for TB, with confounders included (adjusted model)**
+```{r echo=TRUE}
+#Run the adjusted model for TB as outcome (Include sex, race, and age)
+model_adjustTB <- glm(TB ~ IDU + Sex + Black + AgeCat, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_adjustTB) #All values are significant; IDU OR = 2.45, 95% CI (1.47, 4.01)
+
+summary(model_adjustTB) #To see p-values
+
+#Model is statistically significant (Chi-square(5) = 38.49, p<0.0001)
+```
+
+*Model prediction accuracy*
+  - The accuracy of the above model is (0+5266)/5355=98.34%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)   
+  - In other words, this model does very well at predicting non-cases (people without TB), but does extremely poorly at predicting cases (people with TB)
+- This model seems to not do much better at predicting cases than the unadjusted model. 
+
+**Check for Influential Observations**
+```{r echo=TRUE}
+#Cook's D plot
+plot(model_adjustTB, which=4, id.n=5, col="red", cex.id=0.60)
+```
+```{r echo=TRUE, results='hide'}
+#identify observations with a Cook's D greater than 0.008 
+y<-as.data.frame(cooks.distance(model_adjustTB))
+colnames(y)[1]<-"CD"
+y$obs_no<-rownames(y)
+z<-y[which(y$CD>0.02),]
+z$obs_no
+
+#The following observations are influential:
+#"1905" "1930" "1935" "6408" "6475" "6480" "6493" "6514"
+
+#Remove the influential observations from adjusted model
+model_adjustTB2 <- update(model_adjustTB,subset=c(-1905, -1930, -1953, -6408, -6475, -6480, -6493, -6514))
+
+#compare coefficients between models with and without influential observations
+compareCoefs(model_adjustTB, model_adjustTB2) #removing the observations hardly made a difference on the coefficients. Therefore, we will keep the observations as-is 
+```
+
+**Check Multicollinearity**
+```{r echo=TRUE}
+#Variance Inflation Factors
+vif(model_adjustTB)
+
+#The VIF for each variable is less than 2.0, so we are not concerned with multicollinearity 
+```
+
+**Check the log likelihood between the adjusted and unadjusted models**
+Use log likelihood to see how much unexplained information there is after the model has been fitted. The further a predicted value is from the actual value, the more an observation contributes to the LL
+```{r echo=TRUE}
+#Log Likelihood for full models
+logLik(model_unadjustTB) #LL = -449.51
+logLik(model_adjustTB) #LL = -433.66
+#The adjusted model is slightly better
+
+#compare models using LR test
+lmtest::lrtest(model_unadjustTB, model_adjustTB) #The adjusted model accounts for more of the variation and is statistically significantly better than the unadjusted model 
+
+anova(model_unadjustTB, model_adjustTB,test="Chisq") #adjusted model is statistically significantly better
+```
+
+#### Hep and IDU
+
+**Run the general linear model for Hepatitis, without confounders included (unadjusted model)**
+```{r echo=TRUE}
+#Run the unadjusted model with IDU as predictor and Hep as outcome
+model_unadjustHep <- glm(Hep ~ IDU, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_unadjustHep) #IDU OR = 21.02, 95% CI (14.66, 30.99)
+
+summary(model_unadjustHep) #To see p-values
+
+#Model is statistically significant (Chi-square(1) = 358.00, p<0.0001)
+```
+
+*Model prediction accuracy*
+  - The accuracy of the above model is (0+5163)/5355=96.41%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)  
+  - In other words, this model does very well at predicting non-cases (people with no Hepatitis), but does extremely poorly at predicting cases (people with hepatitis)
+  - This is perhaps unsurprising, as logistic regression does not work well as a classifier when the prevalence of the outcome is low. In this case, the prevalence is approximately 3.59%
+
+**Run the general linear model for Hepatitis, with confounders included (adjusted model)**
+```{r echo=TRUE}
+#Run the adjusted model for TB as outcome (Include sex, race, and age)
+model_adjustHep <- glm(Hep ~ IDU + Sex + Black + AgeCat, data=data_cc, family="binomial")
+
+#Check results of the model
+odds.n.ends(model_adjustHep) #All values are significant; IDU OR = 15.12, 95% CI (10.37, 22.64)
+
+summary(model_adjustHep) #To see p-values
+
+#Model is statistically significant (Chi-square(5) = 430.64, p<0.0001)
+```
+
+*Model prediction accuracy*
+  - The accuracy of the above model is (0+5163)/5355=96.41%. It predicts all 0's correctly (100% correct) and all 1's incorrect (0% correct)   
+  - In other words, this model does very well at predicting non-cases (people without hepatitis), but does extremely poorly at predicting cases (people with hepatitis)
+- This model seems to not do much better at predicting cases than the unadjusted model. 
+
+**Check for Influential Observations**
+```{r echo=TRUE}
+#Cook's D plot
+plot(model_adjustHep, which=4, id.n=5, col="red", cex.id=0.60)
+```
+```{r echo=TRUE, results='hide'}
+#identify observations with a Cook's D greater than 0.008 
+y<-as.data.frame(cooks.distance(model_adjustTB))
+colnames(y)[1]<-"CD"
+y$obs_no<-rownames(y)
+z<-y[which(y$CD>0.01),]
+z$obs_no
+
+#The following observations are influential:
+#"134"  "159"  "194"  "309"  "675"  "924"  "979"  "997"  "1062" "1084" "1207" "1281" "1418" "1468" "1503" "1647" "1696" "1740" "1845" "1905" "1930" "1935" "2635" "3280" "4428" "4743" "4864" "4996" "5475" "5803" "5813" "5819" "5857" "5937" "6002" "6028" "6096" "6166" "6297" "6379" "6401" "6408" "6475" "6480" "6493" "6514"
+
+#Remove the influential observations from adjusted model
+model_adjustHep2 <- update(model_adjustHep,subset=c(-134, -159, -194, -309, -675, -924, -979, -997, -1062, -1084, -1207, -1281, -1418, -1468, -1503, -1647, -1696, -1740, -1845, -1905, -1930, -1935, -2635, -3280, -4428, -4743, -4864, -4996, -5475, -5803, -5813, -5819, -5857, -5937, -6002, -6028, -6096, -6166, -6297, -6379, -6401, -6408, -6475, -6480, -6493, -6514))
+
+#compare coefficients between models with and without influential observations
+compareCoefs(model_adjustHep, model_adjustHep2) #removing the observations hardly made a difference on the coefficients. Therefore, we will keep the observations as-is 
+```
+
+**Check Multicollinearity**
+```{r echo=TRUE}
+#Variance Inflation Factors
+vif(model_adjustHep)
+
+#The VIF for each variable is less than 2.0, so we are not concerned with multicollinearity 
+```
+
+**Check the log likelihood between the adjusted and unadjusted models**
+Use log likelihood to see how much unexplained information there is after the model has been fitted. The further a predicted value is from the actual value, the more an observation contributes to the LL
+```{r echo=TRUE}
+#Log Likelihood for full models
+logLik(model_unadjustHep) #LL = -648.55
+logLik(model_adjustHep) #LL = -612.23
+#The adjusted model is slightly better
+
+#compare models using LR test
+lmtest::lrtest(model_unadjustHep, model_adjustHep) #The adjusted model accounts for more of the variation and is statistically significantly better than the unadjusted model 
+
+anova(model_unadjustHep, model_adjustHep,test="Chisq") #adjusted model is statistically significantly better
+```
+
+### Interpretation and conclusions (Discussion)
+
+After adjusting for age, race, and sex, those who had used injection drugs had 2.42 greater odds of having a sexually transmitted disease (HIV, AIDS, and/or a different STD), when compared to those who had never used injection drugs (OR=2.42; 95% CI 1.60, 3.63). 
+
+Adjusting for the same confounders, those who had used injection drugs had 2.45 greater odds of having tuberculosis, when compared to those who had never used injection drugs (OR=2.45; 95% CI 1.47, 4.01). 
+
+Finally, those who had used injection drugs had 15.12 greater odds of having hepatitis, when compared to those who had never used injection drugs (OR=15.12; 95% CI 10.37, 22.64), after adjusting for age, race, and sex.
+
+Overall, there is a positive association between injection drug use and infectious disease. The magnitude of the relationship appears to be relatively the same for STDs and TB as the outcome (ORs of 2.42 and 2.45, respectively). However, the model with hepatitis as the outcome yields an undeniably high magnitude of association (OR=15.12). This affirms that the relationship between injection drug use and hepatitis, specifically, should be investigated further. 
+
+It should be noted, however, that every computed model had a sensitivity of 0% (correctly predicting cases) and a specificity of 100% (correctly predicting non-cases). Therefore, these models might not be ideal if used as a way to predict whether an incarcerated person has an infectious disease. The extremely low sensitivity is likely partially due to the very low prevalence of disease in this sample for STDs, TB, and Hepatits (2.26%, 1.67%, and 3.59%, respectively). This low prevalence makes it particularly difficult to detect cases. 
+
+One limitation of this analysis is that it is impossible to assess causality with a cross sectional study. This is because we cannot know when a person started using injection drugs, how frequently they used them, or for how many years they used. Related, we also do not know when a person first contracted a disease. All we know is that they had a disease at the time of incarceration. There are also a number of ways a person can contract an infectious disease, and injection drug use is only one of them.
+
+Despite these limitations, there were still a number of strengths. For one, this was a large nationally representative sample of the incarcerated population in the United States. Additionally, the analysis focused on an understudied, yet vulnerable population - incarcerated people. This analysis also adjusted for race, sex, and age and considered several different infectious disease types when analyzing the outcomes. 
+
+Given the high magnitudes of association (especially with hepatitis as the outcome), this topic should be explored further. Future studies should better quantify the length, frequency, and specific dates of injection drug use to provide a more precise understanding of the association. Such knowledge will hopefully allow state and local officials to provide more resources and support to those who need it most. 
+
+### Package Citations
+
+Create citations for R, R Studio, and all packages used
+```{r eval=FALSE, include=FALSE}
+#Citation for R
+citation()
+
+#Citation for R Studio
+RStudio.Version()
+
+#For packages
+citation(package = "tidyverse")
+citation(package = "odds.n.ends")
+citation(package = "lmtest")
+citation(package = "car")
+```
+
